@@ -2,3 +2,7 @@
 	path = nvim/.config/nvim
 	url = https://github.com/marcos-aparicio/nvim-config
   ignore = dirty
+[submodule "awesome/.config/awesome"]
+	path = awesome/.config/awesome
+	url = https://github.com/marcos-aparicio/awesome-wm
+  ignore = dirty
