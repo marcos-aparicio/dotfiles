@@ -16,7 +16,7 @@ Repository of my personal config dotfiles organized using stow
 
 ```bash
 
-git clone
+git clone https://github.com/marcos-aparicio/dotfiles.git
 ```
 
 The good thing about using stow is that each folder in the root directory is its own package, you can choose whether to "install" one of the packages into your system or all of them if you want
