@@ -6,3 +6,7 @@
 	path = awesome/.config/awesome
 	url = https://github.com/marcos-aparicio/awesome-wm
   ignore = dirty
+[submodule "rofi/.config/rofi"]
+	path = rofi/.config/rofi
+	url = https://github.com/marcos-aparicio/rofi-config
+  ignore = dirty
