@@ -1,0 +1,7 @@
+os:
+  editPreset: "nvim"
+customCommands:
+  - key: "I"
+    context: "files"
+    command: "git rm --cached {{.SelectedFile.Name | quote}}"
+    description: "Removes a file from the repo but not your system"
