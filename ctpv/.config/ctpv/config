@@ -1,0 +1,9 @@
+preview tarfiles application/x-xz application/gzip {{
+  tar tf "$f"
+}}
+
+preview rarfiles .rar {{
+  unrar l "$f"
+}}
+
+
