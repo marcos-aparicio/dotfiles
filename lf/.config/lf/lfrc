@@ -1,0 +1,5 @@
+
+source "~/.config/lf/options"
+source "~/.config/lf/bookmarks"
+source "~/.config/lf/general-mappings"
+source "~/.config/lf/custom-cmds"

@@ -1,0 +1,27 @@
+# vim: ft=conf
+#
+#
+# GENERAL MAPPINGS THAT DO NOT REQUIRE EXTRA COMMANDS
+# ALSO DELETING SOME DEFAULT MAPPINGS THAT I DONT LIKE OR USE
+
+# interpreter for shell commands
+
+# use enter for shell commands
+map <enter> shell
+
+
+# show the result of execution of previous commands
+map ` !true
+
+# execute current file (must be executable)
+map x $$f
+map X !$f
+
+# dedicated keys for file opener actions
+map o &mimeopen $f
+map O $mimeopen --ask $f
+
+map a :push %mkdir<space>
+map zf :filter
+
+map KK & echo "" | mailx -a "$f" -s "Book" "marcos.aparicio1_Fdpx8b@kindle.com" && $HOME/.local/bin/telegram-message "Book $f was sent to Kindle"
