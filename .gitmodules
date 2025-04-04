@@ -1,0 +1,4 @@
+[submodule "nvim/.config/nvim"]
+	path = nvim/.config/nvim
+	url = https://github.com/marcos-aparicio/nvim-config
+  ignore = dirty
