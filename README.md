@@ -12,6 +12,11 @@ Repository of my personal config dotfiles organized using stow
 - Alacritty (terminal emulator)
 - and much more
 
+### Git Hooks
+
+If you have [pre-commit](https://github.com/pre-commit/pre-commit) installed, make sure to run `pre-commit install` to get the git hooks, for now is just checking for leaks using [gitleaks](https://github.com/gitleaks/gitleaks)
+
+
 ### Installation
 
 ```bash
