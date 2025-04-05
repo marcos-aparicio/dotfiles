@@ -1,0 +1,41 @@
+bindkey -v
+export ZSH_MODULES="$HOME/.config/zsh/modules"
+
+
+[ -f "${XDG_DATA_HOME:-$HOME/.local/share}/zap/zap.zsh" ] && source "${XDG_DATA_HOME:-$HOME/.local/share}/zap/zap.zsh"
+plug "zap-zsh/supercharge"
+plug "zsh-users/zsh-syntax-highlighting"
+plug "kutsan/zsh-system-clipboard"
+export EDITOR="nvim"
+export ZVM_VI_INSERT_ESCAPE_BINDKEY="kj" && plug "jeffreytse/zsh-vi-mode"
+plug "zsh-users/zsh-autosuggestions"
+
+# keybindings
+bindkey '^o' autosuggest-accept
+bindkey -M vicmd yy zsh-system-clipboard-vicmd-vi-yank-whole-line
+bindkey '^[[Z' reverse-menu-complete
+
+[[  -f "$ZSH_MODULES/exports.zsh" ]] && source "$ZSH_MODULES/exports.zsh"
+[[  -f "$ZSH_MODULES/aliases.zsh" ]] && source "$ZSH_MODULES/aliases.zsh"
+[[  -f "$ZSH_MODULES/functions.zsh" ]] && source "$ZSH_MODULES/functions.zsh"
+[[  -f "$ZSH_MODULES/cleanup.zsh" ]] && source "$ZSH_MODULES/cleanup.zsh"
+[[  -f "$ZSH_MODULES/quicklinks.zsh" ]] && source "$ZSH_MODULES/quicklinks.zsh"
+
+eval "$(starship init zsh)"
+eval "$(zoxide init zsh)"
+export STARSHIP_CONFIG=$HOME/.config/starship/starship.toml
+
+export fpath=("$HOME/.config/zsh/functions" $fpath)
+# Load and initialise completion system
+autoload -Uz compinit
+compinit
+
+source ~/.config/task/variables.zsh
+
+LFCD="$HOME/.config/lf/lfcd.sh"
+if [ -f "$LFCD" ]; then
+    source "$LFCD"
+    alias lf='lfcd'
+fi
+
+compinit -d "$XDG_CACHE_HOME"/zsh/zcompdump-"$ZSH_VERSION"
