@@ -1,0 +1,11 @@
+[Unit]
+Description=espanso
+
+[Service]
+ExecStart=/home/marcos/.local/share/appman/espanso/espanso launcher
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=default.target
+
