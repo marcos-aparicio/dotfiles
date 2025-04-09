@@ -8,21 +8,17 @@
 
 # Hledger file
 export LEDGER_FILE="${XDG_DOCUMENTS_DIR:-$HOME/Documents}/Areas/Finances/main.journal"
-
+export STARSHIP_CONFIG=$HOME/.config/starship/starship.toml
 export AZURE_CONFIG_DIR="$XDG_DATA_HOME/azure"
 export CARGO_HOME="$XDG_DATA_HOME/cargo"
 export DOCKER_CONFIG="$XDG_CONFIG_HOME/docker"
 export ELECTRUMDIR="$XDG_DATA_HOME/electrum"
-# export GNUPGHOME="$XDG_DATA_HOME/gnupg"
 export GOPATH="$XDG_DATA_HOME/go"
 export PATH="$GOPATH/bin:$PATH"
 export GTK2_RC_FILES="$XDG_CONFIG_HOME/gtk-2.0/gtkrc"
-
 export XCURSOR_PATH="/usr/share/icons:$XDG_DATA_HOME/icons"
 export GRADLE_USER_HOME="$XDG_DATA_HOME"/gradle
 export WGETRC="$XDG_CONFIG_HOME/wgetrc"
-
-alias monerod=monerod --data-dir "$XDG_DATA_HOME"/bitmonero
 export NUGET_PACKAGES="$XDG_CACHE_HOME"/NuGetPackages
 export OMNISHARPHOME="$XDG_DATA_HOME/omnisharp"
 export PARALLEL_HOME="$XDG_DATA_HOME/parallel"
@@ -30,9 +26,6 @@ export PASSWORD_STORE_DIR="$XDG_DATA_HOME/pass"
 export PLATFORMIO_CORE_DIR="$XDG_DATA_HOME/platformio"
 export PSQL_HISTORY="$XDG_DATA_HOME/psql_history"
 export INPUTRC="$XDG_CONFIG_HOME/readline/inputrc"
-export PYENV_ROOT="$XDG_DATA_HOME"/pyenv
-[[ -d $PYENV_ROOT/bin ]] && export PATH="$PYENV_ROOT/bin:$PATH"
-eval "$(pyenv init - zsh)"
 export RUSTUP_HOME="$XDG_DATA_HOME/rustup"
 export SQLITE_HISTORY="$XDG_DATA_HOME/sqlite_history"
 
@@ -44,7 +37,6 @@ export ZDOTDIR="$HOME"/.config/zsh
 export WORKON_HOME="$XDG_DATA_HOME/virtualenvs"
 export W3M_DIR="$XDG_DATA_HOME/w3m"
 
-alias wget=wget --hsts-file="$XDG_CACHE_HOME/wget-hsts"
 export DOTNET_CLI_HOME="$XDG_DATA_HOME"/dotnet
 export PATH="$PATH:$DOTNET_CLI_HOME/tools:$DOTNET_CLI_HOME/.dotnet/tools"
 export NUGET_PACKAGES="$XDG_CACHE_HOME"/NuGetPackages
@@ -56,8 +48,6 @@ export RLWRAP_HOME="$XDG_DATA_HOME/rlwrap"
 
 export NUGET_PACKAGES="$XDG_CACHE_HOME/NuGetPackages"
 
-alias mysql-workbench="mysql-workbench --configdir=$XDG_DATA_HOME/mysql/workbench"
-alias lynx="lynx -cfg=$XDG_CONFIG_HOME/lynx/lynxrc"
 
 export _Z_DATA=$HOME/.local/share/z/z
 export STARDICT_DATA_DIR=$HOME/.local/share/stardict/
@@ -66,31 +56,15 @@ export ABOOKDATA=$HOME/.local/share/abook/addressbook
 export VIT_DIR="$HOME/.config/vit/"
 # zsh clean up
 export HISTFILE="$XDG_STATE_HOME"/zsh/history
-# Completion files: Use XDG dirs
-[ -d "$XDG_CACHE_HOME"/zsh ] || mkdir -p "$XDG_CACHE_HOME"/zsh
-zstyle ':completion:*' cache-path "$XDG_CACHE_HOME"/zsh/zcompcache
-compinit -d "$XDG_CACHE_HOME"/zsh/zcompdump-$ZSH_VERSION
 
-alias monerod=monerod --data-dir "$XDG_DATA_HOME"/bitmonero
 
-export SDKMAN_DIR="$XDG_DATA_HOME"/sdkman
-
-autoload bashcompinit
-bashcompinit
-source "${XDG_DATA_HOME:-$HOME/.local/share}/bash-completion/completions/appman"
-[[ -s "$SDKMAN_DIR/bin/sdkman-init.sh" ]] && source "$SDKMAN_DIR/bin/sdkman-init.sh"
 
 # so that there isn't a .npmrc file in the home directory
 export NPM_CONFIG_USERCONFIG="$XDG_CONFIG_HOME/npm/npmrc"
 
-
 # for java programs in general to not clutter the home directory
 # sources: https://wiki.archlinux.org/title/XDG_Base_Directory the sts4 section
 export _JAVA_OPTIONS="-Djava.util.prefs.userRoot="$XDG_CONFIG_HOME"/java -Dlanguageserver.boot.symbolCacheDir=$XDG_CACHE_HOME/sts4/symbolCache"
-
 # for maven to not clutter the home directory
-export MAVEN_OPTS=-Dmaven.repo.local="$XDG_DATA_HOME"/maven/repository
-
-alias feh="feh --no-fehbg"
-alias yarn="yarn --use-yarnrc $XDG_CONFIG_HOME/yarn/config"
+export MAVEN_OPTS="-Dmaven.repo.local="$XDG_DATA_HOME"/maven/repository"
 export NODE_REPL_HISTORY="$XDG_DATA_HOME"/node_repl_history

@@ -1,3 +1,6 @@
+# for plugins
+export ZVM_VI_INSERT_ESCAPE_BINDKEY="kj"
+
 # XDG
 export XDG_CONFIG_HOME=$HOME/.config
 export XDG_DATA_HOME=$HOME/.local/share
@@ -32,8 +35,6 @@ export PATH="${additional_paths[@]}:$PATH"
 # ADDITIONAL
 export TERM=xterm-256color
 export GTK_THEME=Vivid-Dark-GTK
-export GPG_TTY=$(tty)
-gpg-connect-agent updatestartuptty /bye >/dev/null
 export EDITOR=/usr/bin/nvim
 export HISTCONTROL=ignoredups
 export JIRA_AUTH_TYPE="basic"

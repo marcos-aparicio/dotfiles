@@ -1,41 +1,31 @@
-bindkey -v
-export ZSH_MODULES="$HOME/.config/zsh/modules"
+src_module(){
+  ZSH_MODULES="$HOME/.config/zsh/modules"
+  module="$ZSH_MODULES/$1"
+  [[ -f "$module" ]] && source "$module"
+}
 
+# ORDER MATTERS
 
-[ -f "${XDG_DATA_HOME:-$HOME/.local/share}/zap/zap.zsh" ] && source "${XDG_DATA_HOME:-$HOME/.local/share}/zap/zap.zsh"
-plug "zap-zsh/supercharge"
-plug "zsh-users/zsh-syntax-highlighting"
-plug "kutsan/zsh-system-clipboard"
-export EDITOR="nvim"
-export ZVM_VI_INSERT_ESCAPE_BINDKEY="kj" && plug "jeffreytse/zsh-vi-mode"
-plug "zsh-users/zsh-autosuggestions"
+# first load plugins
+src_module "plugins.zsh"
 
-# keybindings
-bindkey '^o' autosuggest-accept
-bindkey -M vicmd yy zsh-system-clipboard-vicmd-vi-yank-whole-line
-bindkey '^[[Z' reverse-menu-complete
+# then some custom bindings
+src_module "bindings.zsh"
 
-[[  -f "$ZSH_MODULES/exports.zsh" ]] && source "$ZSH_MODULES/exports.zsh"
-[[  -f "$ZSH_MODULES/aliases.zsh" ]] && source "$ZSH_MODULES/aliases.zsh"
-[[  -f "$ZSH_MODULES/functions.zsh" ]] && source "$ZSH_MODULES/functions.zsh"
-[[  -f "$ZSH_MODULES/cleanup.zsh" ]] && source "$ZSH_MODULES/cleanup.zsh"
-[[  -f "$ZSH_MODULES/quicklinks.zsh" ]] && source "$ZSH_MODULES/quicklinks.zsh"
+# defined enviroment variables(not related to xdg compliance)
+src_module "exports.zsh"
 
-eval "$(starship init zsh)"
-eval "$(zoxide init zsh)"
-export STARSHIP_CONFIG=$HOME/.config/starship/starship.toml
+# defined aliases (not related to xdg compliance)
+src_module "aliases.zsh"
 
-export fpath=("$HOME/.config/zsh/functions" $fpath)
-# Load and initialise completion system
-autoload -Uz compinit
-compinit
+src_module "functions.zsh"
 
-source ~/.config/task/variables.zsh
+# env vars and aliases related to xdg compliance
+src_module "cleanup.vars.zsh"
+src_module "cleanup.aliases.zsh"
 
-LFCD="$HOME/.config/lf/lfcd.sh"
-if [ -f "$LFCD" ]; then
-    source "$LFCD"
-    alias lf='lfcd'
-fi
+# completion setups for zsh
+src_module "completion.zsh"
 
-compinit -d "$XDG_CACHE_HOME"/zsh/zcompdump-"$ZSH_VERSION"
+# extra stuff
+src_module "extra.zsh"
