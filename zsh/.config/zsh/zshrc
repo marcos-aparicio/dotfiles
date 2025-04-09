@@ -1,7 +1,9 @@
 src_module(){
   ZSH_MODULES="$HOME/.config/zsh/modules"
   module="$ZSH_MODULES/$1"
-  [[ -f "$module" ]] && source "$module"
+  if [[ -f "$module" ]]; then
+    source "$module"
+  fi
 }
 
 # ORDER MATTERS
@@ -27,5 +29,5 @@ src_module "cleanup.aliases.zsh"
 # completion setups for zsh
 src_module "completion.zsh"
 
-# extra stuff
+# extra stuff, like lazy loading applications or setting up wrappers
 src_module "extra.zsh"
