@@ -52,3 +52,7 @@ send_to_kindle(){
 
   echo "" | mailx -a "$1" -s "Book" $email
 }
+
+load_openai_key(){
+  export OPENAI_API_KEY=$(pass show personal/api_keys/openai)
+}
