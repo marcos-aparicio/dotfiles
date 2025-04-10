@@ -23,3 +23,7 @@ appman() {
   source "${XDG_DATA_HOME:-$HOME/.local/share}/bash-completion/completions/appman"
   command appman "$@"
 }
+
+# setting up tty stuff
+export GPG_TTY=$(tty)
+gpg-connect-agent updatestartuptty /bye >/dev/null
