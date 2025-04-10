@@ -58,10 +58,8 @@ alias v="nvim "
 alias rm="trash -vi"
 alias abook="abook -C $ABOOKRC --datafile $ABOOKDATA"
 alias mbsync="mbsync -c \"$HOME/.config/isync/mbsyncrc\""
-# alias mariadb="mariadb -u root --password='$(pass show databases/mariadb)'"
 
 # UTILS (programs that do something useful)
-# alias setjiratoken="export JIRA_API_TOKEN=$(pass show work/jira/api-key)"
 alias zf='cd "$(cat "$_Z_DATA" | cut -f1 -d "|" | fzf)"'
 alias c="clear"
 alias cwd="pwd | xclip -selection clipboard && echo 'Current working directory copied to clipboard'"
