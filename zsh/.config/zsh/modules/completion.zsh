@@ -1,8 +1,9 @@
 eval "$(starship init zsh)"
 eval "$(zoxide init zsh)"
 eval "$(pyenv init - zsh)"
+eval "$(fzf --zsh)"
 
-export fpath=("$HOME/.config/zsh/functions" $fpath)
+export fpath=("$XDG_DATA_HOME/zsh/functions" $fpath)
 
 # Completion files: Use XDG dirs
 autoload -Uz compinit
