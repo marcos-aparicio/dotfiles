@@ -8,7 +8,6 @@ export XDG_STATE_HOME=$HOME/.local/state
 export XDG_CACHE_HOME=$HOME/.cache
 export _XDG_CACHE_HOME=$HOME/.cache
 
-export PAGER=$(command -v nvimpager &>/dev/null && echo nvimpager || echo less)
 # PATH
 additional_paths=(
     $HOME/.config/composer/vendor/bin
