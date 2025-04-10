@@ -8,14 +8,14 @@ src_module(){
 
 # ORDER MATTERS
 
-# first load plugins
+# defined enviroment variables(not related to xdg compliance)
+src_module "vars.zsh"
+
+# load plugins
 src_module "plugins.zsh"
 
 # then some custom bindings
 src_module "bindings.zsh"
-
-# defined enviroment variables(not related to xdg compliance)
-src_module "vars.zsh"
 
 # defined aliases (not related to xdg compliance)
 src_module "aliases.zsh"
