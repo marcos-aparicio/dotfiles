@@ -1,0 +1,95 @@
+{
+  "window.menuBarVisibility": "toggle",
+  "workbench.colorTheme": "Ayu Mirage",
+  "workbench.iconTheme": "ayu",
+  "editor.fontFamily": "Mononoki NF",
+  "editor.fontSize": 16,
+  "vim.leader": "<Space>",
+  "vim.useSystemClipboard": true,
+  "vim.handleKeys": {
+    "<C-n>": false,
+    "<C-k>": true,
+    "<C-j>": true
+  },
+  "vim.smartRelativeLine": true,
+  "vim.insertModeKeyBindingsNonRecursive": [
+    {
+      "before": ["k", "j"],
+      "after": ["<ESC>"]
+    }
+  ],
+  "vim.normalModeKeyBindingsNonRecursive": [
+    {
+      "before": ["<leader>", "v"],
+      "commands": [":vsplit"]
+    },
+    {
+      "before": ["<C-h>"],
+      "after": ["<C-w>", "h"]
+    },
+    {
+      "before": ["<C-l>"],
+      "after": ["<C-w>", "l"]
+    },
+    {
+      "before": ["<leader>", "h"],
+      "commands": [":split"]
+    },
+    {
+      "before": ["<leader>", "t"],
+      "commands": ["workbench.action.terminal.focus"]
+    },
+    {
+      "before": ["<leader>", "a", "o"],
+      "commands": ["outline.toggleVisibility"]
+    },
+    {
+      "before": ["<C-b>"],
+      "commands": ["workbench.action.toggleSidebarVisibility"]
+    },
+    {
+      "before": ["H"],
+      "commands": [":tabprev"]
+    },
+    {
+      "before": ["L"],
+      "commands": [":tabnext"]
+    },
+    {
+      "before": ["g", "b"],
+      "after": ["G"]
+    },
+    {
+      "before": ["leader", "w"],
+      "commands": ["workbench.action.files.save"]
+    },
+    {
+      "before": ["leader", "q"],
+      "commands": ["workbench.action.closeActiveEditor"]
+    },
+    {
+      "before": ["leader", "f"],
+      "commands": ["workbench.action.quickOpen"]
+    },
+    {
+      "before": ["j"],
+      "after": ["g", "j"]
+    },
+    {
+      "before": ["k"],
+      "after": ["g", "k"]
+    },
+    {
+      "before": ["g", "l"],
+      "after": ["$"]
+    },
+    {
+      "before": ["g", "h"],
+      "after": ["^"]
+    }
+  ],
+  "launch": {
+    "configurations": []
+  },
+  "vim.sneak": true
+}
