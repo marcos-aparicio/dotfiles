@@ -46,4 +46,7 @@ _fzf_compgen_dir(){
 }
 
 bindkey -r '^G'
-source "$XDG_DATA_HOME/zsh/fzf-git.sh/fzf-git.sh"
+
+if [[ -f "$XDG_DATA_HOME/zsh/fzf-git.sh/fzf-git.sh" ]]; then
+  source "$XDG_DATA_HOME/zsh/fzf-git.sh/fzf-git.sh"
+fi
