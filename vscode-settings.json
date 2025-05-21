@@ -18,7 +18,37 @@
       "after": ["<ESC>"]
     }
   ],
+  "vim.visualModeKeyBindingsNonRecursive": [
+    {
+      "before": ["g", "l"],
+      "after": ["$"]
+    },
+    {
+      "before": ["g", "h"],
+      "after": ["^"]
+    },
+    {
+      "before": ["<leader>", "s"],
+      "after": [":s//gI<left><left><left>"]
+    },
+  ],
   "vim.normalModeKeyBindingsNonRecursive": [
+    {
+      "before": ["<leader>", "s"],
+      "after": [":s//gI<left><left><left>"]
+    },
+    {
+      "before": ["<leader>", "S"],
+      "after": [":%s//gI<left><left><left>"]
+    },
+    {
+      "before": ["g", "l"],
+      "after": ["$"]
+    },
+    {
+      "before": ["g", "h"],
+      "after": ["^"]
+    },
     {
       "before": ["<leader>", "v"],
       "commands": [":vsplit"]
