@@ -1,0 +1,11 @@
+[Unit]
+Description=Start tmux session at login
+After=graphical-session.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/tmux new-session -d -s mysession
+RemainAfterExit=true
+
+[Install]
+WantedBy=default.target

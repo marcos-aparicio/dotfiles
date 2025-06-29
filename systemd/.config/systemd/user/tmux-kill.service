@@ -1,0 +1,12 @@
+[Unit]
+Description=Performs tmux-kill-server before shutting down system
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStop=/bin/sh -c '/usr/bin/tmux kill-server'
+StandardOutput=journal
+
+[Install]
+WantedBy=default.target
+
