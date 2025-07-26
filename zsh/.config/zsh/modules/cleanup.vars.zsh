@@ -28,6 +28,7 @@ export PSQL_HISTORY="$XDG_DATA_HOME/psql_history"
 export INPUTRC="$XDG_CONFIG_HOME/readline/inputrc"
 export RUSTUP_HOME="$XDG_DATA_HOME/rustup"
 export SQLITE_HISTORY="$XDG_DATA_HOME/sqlite_history"
+export VJA_CONFIGDIR="$XDG_CONFIG_HOME/vja"
 
 export STACK_XDG=1
 export STACK_ROOT="$XDG_DATA_HOME/stack"

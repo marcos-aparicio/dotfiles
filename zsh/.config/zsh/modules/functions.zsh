@@ -43,11 +43,11 @@ au(){
 send_to_kindle(){
   email="$2"
 
-  if [ ! -z "$2" ]; then
-    email=$(pass show "emails/kindle2")
-  else
-    email=$(pass show "emails/kindle1")
-  fi
+  # if [ ! -z "$2" ]; then
+  #   email=$(pass show "emails/kindle2")
+  # else
+  email=$(pass show "emails/kindle1")
+  # fi
   echo "Sent to $email"
 
   echo "" | mailx -a "$1" -s "Book" $email
