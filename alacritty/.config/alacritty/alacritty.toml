@@ -36,7 +36,7 @@ mods = "Control|Shift"
 
 [colors.bright]
 black = "#686868"
-blue = "#59C2FF"
+blue = "#00afff"      # Vivid blue, also high contrast
 cyan = "#95E6CB"
 green = "#C2D94C"
 magenta = "#FFEE99"
@@ -46,7 +46,7 @@ yellow = "#FFB454"
 
 [colors.normal]
 black = "#01060E"
-blue = "#4C72B0"
+blue = "#268bd2"      # Solarized blue, good contrast
 cyan = "#90E1C6"
 green = "#91B362"
 magenta = "#FAE994"
@@ -57,6 +57,11 @@ yellow = "#F9AF4F"
 [colors.primary]
 background = "#0A0E14"
 foreground = "#B3B1AD"
+
+
+[colors.selection]
+text = "#000000"
+background = "#afd7ff"  # Light blue background for selection
 
 [font]
 size = 12.5
