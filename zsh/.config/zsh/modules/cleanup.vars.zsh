@@ -68,3 +68,5 @@ export _JAVA_OPTIONS="-Djava.util.prefs.userRoot="$XDG_CONFIG_HOME"/java -Dlangu
 # for maven to not clutter the home directory
 export MAVEN_OPTS="-Dmaven.repo.local="$XDG_DATA_HOME"/maven/repository"
 export NODE_REPL_HISTORY="$XDG_DATA_HOME"/node_repl_history
+export VJA_CONFIGDIR="$HOME/.config/vja"
+export LINKDING_CONFIG="$HOME/.config/linkding/config.json"
