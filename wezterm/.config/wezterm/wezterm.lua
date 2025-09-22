@@ -37,12 +37,20 @@ local config = {
   -- UI
   enable_tab_bar = false,        -- no tab bar
   exit_behavior_messaging = "None",       -- no confirmation when exiting
+  window_close_confirmation = "NeverPrompt",
   check_for_updates = false,     -- optional: avoid update popups
+  keys = {
+    {
+      key = "LeftArrow",
+      mods = "CTRL|SHIFT",
+      action = wezterm.action.SendString("\x1b[1;6D"),
+    },
+    {
+      key = "RightArrow",
+      mods = "CTRL|SHIFT",
+      action = wezterm.action.SendString("\x1b[1;6C"),
+    },
+  },
 }
-
-wezterm.on("gui-startup", function(cmd)
-  local tab, pane, window = wezterm.mux.spawn_window(cmd or {})
-  window:set_title("My Custom Window Name")
-end)
 
 return config
