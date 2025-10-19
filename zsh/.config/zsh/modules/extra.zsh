@@ -46,4 +46,7 @@ _fzf_compgen_dir(){
 }
 
 bindkey -r '^G'
+if [[ ! -d "$XDG_DATA_HOME/zsh/fzf-git.sh" ]]; then
+  git clone https://github.com/junegunn/fzf-git.sh.git "$XDG_DATA_HOME/zsh/fzf-git.sh"
+fi
 source "$XDG_DATA_HOME/zsh/fzf-git.sh/fzf-git.sh"
