@@ -22,7 +22,7 @@ when ='''! test -z "$(task active 2>/dev/null)" '''
 
 [time]
 disabled = false
-time_format = '%W'
+time_format = '%V'
 format = '[W$time]($style) '
 
 # [custom.date]
