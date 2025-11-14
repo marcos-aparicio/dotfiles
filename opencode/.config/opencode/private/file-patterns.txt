@@ -1,0 +1,1 @@
+/home/marcos/Documents/Areas/Obsidian/work/reports/*.md
