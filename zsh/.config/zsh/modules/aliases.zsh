@@ -71,6 +71,7 @@ alias lockscreen='dm-tool switch-to-greeter'
 alias weather="curl -s wttr.in/~Hamilton\?format=j1 | bat - --language=json"
 alias j="just --choose"
 alias sail='sh $([ -f sail ] && echo sail || echo vendor/bin/sail)'
+alias lzd="lazydocker"
 
 [ -f "$HOME/.local/privbin/prueba.sh" ] && alias prueba="nvim $HOME/.local/privbin/prueba.sh"
 [ -d "$HOME/.local/bin" ] && alias localbin="nvim $HOME/.local"
