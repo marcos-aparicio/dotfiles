@@ -12,9 +12,19 @@ def() {
 
 mirar()
 {
-  yt-dlp -o - $1 | mpv -
+  yt-dlp -o - $1 | vlc -
 }
 
+superkill()
+{
+  # kills a window clicked by xprop
+  kill -9 $(xprop | grep _NET_WM_PID | grep -oE "[0-9]+")
+}
+copy()
+{
+  # copies the first argument to the clipboard, as simple as that
+  echo $1 | xclip -selection clipboard
+}
 
 
 # shortcut that i created for zaread(zathura for other files)
