@@ -8,6 +8,7 @@
 	this = git symbolic-ref --short HEAD symbolic-ref --short HEAD
   open = "!f() { url=$(git remote -v | grep origin | head -n 1 | awk '{print $2}' | sed 's/git@//g; s/:/\\//g; s/^/https:\\/\\//; s/\\.git$//'); branch=$(git branch --show-current); xdg-open \"$url/tree/$branch\"; }; f"
   set-ssh-key = "!bash ~/.local/bin/change-ssh-key"
+  clone-with-diff-key="!bash ~/.local/bin/git-clone-with-diff-ssh-key"
 
 [filter "lfs"]
 	clean = git-lfs clean -- %f
