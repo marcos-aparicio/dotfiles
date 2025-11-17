@@ -20,6 +20,7 @@ additional_paths=(
     $HOME/.config/tmux/sh
     $HOME/.local/expect
     $HOME/.local/scripts
+    $HOME/.local/share/npm-global/bin
     $HOME/.cargo/bin
     /opt/sioyek/
 )
