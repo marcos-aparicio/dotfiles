@@ -1,12 +1,12 @@
 [submodule "nvim/.config/nvim"]
 	path = nvim/.config/nvim
-	url = https://github.com/marcos-aparicio/nvim-config
+	url = git@github.com:marcos-aparicio/nvim-config.git
   ignore = dirty
 [submodule "awesome/.config/awesome"]
 	path = awesome/.config/awesome
-	url = https://github.com/marcos-aparicio/awesome-wm
+	url = git@github.com:marcos-aparicio/awesome-wm.git
   ignore = dirty
 [submodule "rofi/.config/rofi"]
 	path = rofi/.config/rofi
-	url = https://github.com/marcos-aparicio/rofi-config
+	url = git@github.com:marcos-aparicio/rofi-dotfiles.git
   ignore = dirty
