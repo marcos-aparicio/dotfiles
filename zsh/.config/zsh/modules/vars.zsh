@@ -19,6 +19,7 @@ additional_paths=(
     $HOME/.config/ranger/sh
     $HOME/.config/tmux/sh
     $HOME/.local/expect
+    $HOME/.local/scripts
     $HOME/.cargo/bin
     /opt/sioyek/
 )
