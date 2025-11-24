@@ -32,12 +32,14 @@
     ~/.config/systemd/user/greenclip.service: systemd/greenclip.service
     ~/.config/systemd/user/redshift.service: systemd/redshift.service
     ~/.config/systemd/user/syncthing.service: systemd/syncthing.service
+    ~/.config/systemd/user/tmux-on-boot.service: systemd/tmux-on-boot.service
     # scripts
     ~/.local/scripts: scripts
     # submodules
     ~/.config/nvim: nvim
     ~/.config/awesome: awesome
     ~/.config/rofi: rofi
+    ~/.config/tmuxp: tmuxp
 
 - shell:
   - git submodule sync --recursive
