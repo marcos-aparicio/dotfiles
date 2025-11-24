@@ -22,6 +22,7 @@ additional_paths=(
     $HOME/.local/scripts
     $HOME/.local/share/npm-global/bin
     $HOME/.cargo/bin
+    $HOME/.opencode/bin
     /opt/sioyek/
 )
 additional_paths=$(echo "${additional_paths[@]}" | tr ' ' ':')
