@@ -38,7 +38,7 @@ export PATH="${additional_paths[@]}:$PATH"
 # ADDITIONAL
 export TERM=xterm-256color
 export GTK_THEME=Vivid-Dark-GTK
-export EDITOR=/usr/bin/nvim
+export EDITOR=nvim
 export HISTCONTROL=ignoredups
 export JIRA_AUTH_TYPE="basic"
 export WORDLISTS=$XDG_DATA_HOME/wordlists
