@@ -1,0 +1,29 @@
+#!/bin/sh
+# script extracted from: https://jonathanh.co.uk/blog/mutt-setup/
+
+# Put the message, send to stdin, in a variable
+message="$(cat -)"
+config="$HOME/.config/msmtp/config"
+# Look at the first argument,
+# Use it to determine the account to use
+# If not set, assume work
+# All remaining arguments should be recipient addresses which should be passed to msmtp
+case "$(echo "$1" | tr '[A-Z]' '[a-z]')" in
+    "work") account="work"; shift ;;
+    "home") account="home"; shift ;;
+    "college"|"school") account="college"; shift ;;
+    "personal1") account="personal1"; shift ;;
+    *) account="work"; ;;
+esac
+
+cleanHeaders(){
+    # In the headers, delete any lines starting with markdown
+    cat - | sed '0,/^$/{/^markdown/Id;}'
+}
+
+echo "$message" | sed '/^$/q' | grep -q -i 'markdown: true' \
+    && echo "$message" | cleanHeaders | convert-to-html-multipart | msmtp --file="$config" --account="$account" "$@" \
+    || echo "$message" | cleanHeaders | msmtp --file="$config" --account="$account" "$@"
+
+# Update notmuch database
+( sleep 2 && notmuch new ) &

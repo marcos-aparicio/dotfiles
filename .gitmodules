@@ -1,0 +1,20 @@
+[submodule "dotbot"]
+	path = dotbot
+	url = https://github.com/anishathalye/dotbot
+	ignore = dirty
+
+[submodule "nvim"]
+	path = nvim
+	url = git@github.com:marcos-aparicio/nvim-config.git
+	branch = dev
+  ignore = dirty
+
+[submodule "awesome"]
+	path = awesome
+	url = git@github.com:marcos-aparicio/awesome-wm.git
+  ignore = dirty
+
+[submodule "rofi"]
+	path = rofi
+	url = git@github.com:marcos-aparicio/rofi-dotfiles.git
+  ignore = dirty

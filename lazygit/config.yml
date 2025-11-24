@@ -1,0 +1,17 @@
+os:
+  editPreset: "nvim"
+customCommands:
+  - key: "I"
+    context: "files"
+    command: "git rm --cached {{.SelectedFile.Name | quote}}"
+    description: "Removes a file from the repo but not your system"
+  - key: 'x'
+    context: 'commits'
+    description: 'Change commit date'
+    prompts:
+      - type: 'input'
+        title: 'Enter new date (git date format, e.g., "Mon Jan 2 15:04:05 2006 -0700")'
+        key: 'NewDate'
+        initialValue: '{{ runCommand (printf "git show -s --format=%%ad %s" .SelectedCommit.Hash) }}'
+    command: 'git filter-branch -f --env-filter ''if [ $GIT_COMMIT = {{.SelectedCommit.Hash}} ]; then export GIT_AUTHOR_DATE="{{.Form.NewDate}}"; export GIT_COMMITTER_DATE="{{.Form.NewDate}}"; fi'' HEAD'
+    output: 'log'

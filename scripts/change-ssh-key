@@ -1,0 +1,40 @@
+#!/usr/bin/env bash
+
+# Check if fzf is installed
+if ! command -v fzf &> /dev/null; then
+
+  echo "❌ fzf is not installed. Please install fzf to use this command."
+  exit 1
+fi
+
+# Check if ~/.ssh directory exists
+SSH_DIR="$HOME/.ssh"
+if [ ! -d "$SSH_DIR" ]; then
+
+  echo "❌ SSH directory $SSH_DIR does not exist."
+  exit 1
+fi
+
+# Find private key files (excluding pub keys)
+
+KEYS=$(find "$SSH_DIR" -type f ! -name "*.pub" -exec file {} \; | grep "private key" | cut -d: -f1)
+
+if [ -z "$KEYS" ]; then
+  echo "❌ No SSH private keys found in $SSH_DIR."
+
+  exit 1
+fi
+
+
+# Let user pick a key using fzf
+SELECTED_KEY=$(echo "$KEYS" | fzf --prompt="Select SSH key: ")
+
+if [ -z "$SELECTED_KEY" ]; then
+  echo "❌ No key selected."
+  exit 1
+fi
+
+# Set the git core.sshCommand
+git config core.sshCommand "ssh -i $SELECTED_KEY -o IdentitiesOnly=yes"
+echo "✅ Git SSH key set for this repo: $SELECTED_KEY"
+

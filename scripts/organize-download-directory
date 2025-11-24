@@ -1,0 +1,71 @@
+#!/bin/bash
+
+# file=$(realpath "${BASH_SOURCE[0]}")
+# HASH=$(echo -n "$file" | sha256sum | awk '{print $1}')
+# LOCKFILE="/tmp/inotify_wait_${HASH}"
+#
+# if [ -f "$LOCKFILE" ]; then
+#    echo "Another instance is already running. Exiting."
+#    exit 1
+# fi
+# touch "$LOCKFILE"
+
+pattern=~/Downloads/*
+if [ "$1" == "--everything" ]; then
+  shopt -s globstar
+  pattern=~/Downloads/**
+fi
+
+for file in $pattern; do
+  if [[ -d "$file" || "$file" == *.part ]]; then
+    continue
+  fi
+
+
+  # skip empty files
+  if [[ $(stat -c %s "$file") == 0 ]]; then
+    echo "Skipping empty file $file"
+    continue
+  fi
+
+  # skip partial downloads
+  if [[ "$file" =~ \.(part|crdownload)$ ]]; then
+    echo "Skipping $file"
+    continue
+  fi
+
+  # skip backups
+  if [[ "$file" =~ \.~[0-9]+~$ ]]; then
+    continue
+  fi
+
+  dir="extra"
+
+  if [[ "$file" =~ \.(mp4|avi|mov)$ ]]; then
+    dir="videos"
+  elif [[ "$file" =~ \.(eps|ico|svg|xcf)$ ]]; then
+    dir="graphics"
+  elif [[ "$file" =~ \.pdf$ ]]; then
+    dir="pdfs"
+  elif [[ "$file" =~ \.(doc|xlsx|docx|odt|txt|csv)$ ]]; then
+    dir="docs"
+  elif [[ "$file" =~ \.(epub)$ ]]; then
+    dir="epubs"
+  elif [[ "$file" =~ \.(ppt|pptx)$ ]]; then
+    dir="presentations"
+  elif [[ "$file" =~ \.(png|jpeg|jpg|webp)$ ]]; then
+    dir="images"
+  elif [[ "$file" =~ \.(mp3|wav|flac)$ ]]; then
+    dir="audio"
+  elif [[ "$file" =~ \.(zip|deb|rpm)$ || "$file" == *.tar* ]]; then
+    dir="compressed"
+  elif [[ "$file" =~ \.(py|js|sh|lua)$ ]]; then
+    dir="code"
+  fi
+
+
+  [[ $(dirname "$file") == "$HOME/Downloads/$dir" ]] && continue
+
+  mkdir -p "$HOME/Downloads/$dir"
+  mv --backup=numbered "$file" "$HOME/Downloads/$dir"
+done

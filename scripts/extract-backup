@@ -1,0 +1,32 @@
+#!/bin/bash
+
+backup_dir="$HOME/Backups/borg"
+
+get_backup_dir(){
+  find "$backup_dir" -mindepth 1 -maxdepth 1 -type d | xargs -I {} basename {} | fzf
+}
+
+get_backup_entry(){
+  [[ -z $1 ]] && echo "invalid backup entry" && exit 1
+
+  specific_backup_dir="$backup_dir/$1"
+  export BORG_PASSCOMMAND="pass show borg"
+  borg list $specific_backup_dir --short | sort --reverse | fzf
+}
+
+extract_backup(){
+  [[ -z $1 ]] && echo "invalid backup entry" && exit 1
+  [[ -z $2 ]] && echo "invalid backup dir" && exit 1
+
+  extracted_dir=$(mkdir $2_backup_entry_$1_at_$(date -Is) && echo $2_backup_entry_$1_at_$(date -Is))
+  cd $extracted_dir
+  borg extract $backup_dir/$2::$1 &&\
+  echo "Backup extracted successfully on $extracted_dir"
+}
+
+main(){
+  dir=$(get_backup_dir)
+  entry=$(get_backup_entry $dir)
+  extract_backup $entry $dir
+}
+main

@@ -1,0 +1,34 @@
+# Inserts a blank line between shell prompts
+# add_newline = false
+# format = """$directory$character"""
+# right_format="""$all"""
+
+# [custom.calcurse]
+# command = "calcurse --input-datefmt 4 -G --filter-start-range today,today | wc -l"
+# description = "Show any calendar events from my calcurse calendar"
+# format = '🗓️  $output '
+# when =''' test "$(calcurse --input-datefmt 4 -G --filter-start-range today,today | wc -l)" != "0"'''
+
+# [custom.inbox-gtd]
+# command = "task rc.context= +in +PENDING count"
+# description = "Show any calendar events from my calcurse calendar"
+# format = '| 📥 $output|'
+# when =''' test "$(task rc.context= +in +PENDING count)" != "0"'''
+
+[custom.active-taskwarrior]
+description = "Show an icon when there's more than 0 started task(s)"
+format = ' 🚨 '
+when ='''! test -z "$(task active 2>/dev/null)" '''
+
+[time]
+disabled = false
+time_format = '%V'
+format = '[W$time]($style) '
+
+# [custom.date]
+# command = 'date +"%Y-W%V"'
+# description = "Show date"
+# format = '📅 $output'
+# right_format="""$all"""
+# when =''' test "$(task rc.context= +in +PENDING count)" != "0"'''
+

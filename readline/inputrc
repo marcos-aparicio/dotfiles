@@ -1,0 +1,11 @@
+set editing-mode vi
+set show-mode-in-prompt on
+set vi-ins-mode-string \1\e[6 q\2
+set vi-cmd-mode-string \1\e[2 q\2
+set show-all-if-ambiguous on
+set enable-bracketed-paste on
+set echo-control-characters off
+"\C-a": beginning-of-line
+"\C-e": end-of-line
+"\C-l": clear-screen
+"kj": vi-movement-mode

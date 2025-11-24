@@ -1,0 +1,30 @@
+#!/bin/bash
+
+
+# extracted text
+date1=$(rofi -dmenu -p "First date to copy" -l 0)
+parsed_date1=$(return-date "$date1")
+if [[ "$parsed_date1" == "error" ]]; then
+  exit 1
+fi
+
+date_to_clipboards_format(){
+  formatted=$(date -d "$1" +%Y-%m-%d)
+  echo "\"$formatted\""
+}
+
+notify-send "First date copied to clipboard"
+
+echo $(date_to_clipboards_format "$parsed_date1") | xclip -selection clipboard
+
+date2=$(rofi -dmenu -p "Second date to copy, press enter to cancel" -l 0)
+if [[ "$date2" == "" ]]; then
+  exit 0
+fi
+parsed_date2=$(return-date "$date2")
+if [[ "$parsed_date2" == "error" ]]; then
+  exit 1
+fi
+
+echo $(date_to_clipboards_format "$parsed_date2") | xclip -selection clipboard
+notify-send "Second date copied to clipboard"

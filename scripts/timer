@@ -1,0 +1,30 @@
+#!/bin/bash
+# script to simplify a timer with music
+
+title=""
+sound=""
+time=$1
+while [[ "$#" -gt 0 ]]; do
+    case $1 in
+        --tittle|-T)
+            title=$2
+            shift
+            ;;
+        --sound|-S)
+            sound=$2
+            shift
+            ;;
+    esac
+    shift
+done
+notification_dir="${XDG_DATA_HOME:-$HOME/.local/share}/sounds"
+notification_sound="$notification_dir/clock-alarm-8761.mp3"
+
+if [[ $sound == "pro" ]]; then
+    notification_sound="$notification_dir/Future-ringtone.mp3"
+elif [[ $sound == "melody" ]]; then
+    notification_sound="$notification_dir/Eerie-clock-chimes-sound.mp3"
+fi
+
+
+termdown "$time" -T "$title"  && mpg123 -q "$notification_sound"

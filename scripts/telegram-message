@@ -1,0 +1,27 @@
+#!/bin/bash
+
+if [ -z "$1" ]
+  then
+    echo "Add message text as second arguments"
+    exit 0
+fi
+
+if [ "$#" -ne 1 ]; then
+    echo "You can pass only one argument. For string with spaces put it on quotes"
+    exit 0
+fi
+
+
+chat_id=1405784195
+api_key=$(pass show personal/api_keys/home_bot)
+
+message=$1
+message=$(echo -e "$message")
+
+# echo $message
+# exit 0
+curl -X POST -s \
+  -d text="$message" \
+  -d chat_id="$chat_id" \
+  'https://api.telegram.org/bot'$api_key'/sendMessage' \
+  > /dev/null

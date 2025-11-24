@@ -1,0 +1,34 @@
+#!/bin/bash
+
+# This script serves to perform backups in the specified directories
+
+
+backup_dir="$HOME/Backups/borg"
+
+# Create paired elements (repo1 dir1) IMPORTANT to respect this weakly tied order
+repo_dirs=(
+   taskwarrior ${XDG_DATA_HOME:-$HOME/.local/share}/task
+   obsidian ${XDG_DOCUMENTS_DIR:-$HOME/Documents}/Areas/Obsidian
+   finances ${XDG_DOCUMENTS_DIR:-$HOME/Documents}/Areas/Finances
+   keepassxc ${XDG_DATA_HOME:-$HOME/.local/share}/SecureVaults
+   calibre ${XDG_DOCUMENTS_DIR:-$HOME/Documents}/Resources/Ebooks
+)
+
+
+export BORG_PASSCOMMAND="pass show borg"
+
+# final command borg create $backup_dir/$repo_name::$(date -Is) $repo_dir
+# printf "$backup_dir/%s::$(date -Is)\n%s\n" "${repo_dirs[@]}" | xargs -n 2 borg create
+
+repo_dirs=(
+   taskwarrior:${XDG_DATA_HOME:-$HOME/.local/share}/task
+   obsidian:${XDG_DOCUMENTS_DIR:-$HOME/Documents}/Areas/Obsidian
+   finances:${XDG_DOCUMENTS_DIR:-$HOME/Documents}/Areas/Finances
+   keepassxc:${XDG_DATA_HOME:-$HOME/.local/share}/SecureVaults
+   calibre:${XDG_DOCUMENTS_DIR:-$HOME/Documents}/Resources/Ebooks
+)
+IFS=:
+for repo in "${repo_dirs[@]}"; do
+  read -r repo_name repo_dir <<< "$repo"
+  cd "$repo_dir" && borg create "$backup_dir/$repo_name::$(date -Is)" .
+done

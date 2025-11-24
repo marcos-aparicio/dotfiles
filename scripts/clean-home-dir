@@ -1,0 +1,13 @@
+#!/bin/bash
+
+# This script serves to clean dotfiles in my home directory that are left empty or useless from some applications
+# I am using this intandem with boxxy
+
+
+# deletes empty directories in ~
+find $HOME -maxdepth 1 -type d -empty -exec rmdir {} +
+
+# additional directories that tend to leave messy files in the home dir
+dirs_or_files_to_also_delete=( ".vscode" ".xsession-errors.old" ".ollama" ) # .thunderbird not included
+printf '%s\0' "${dirs_or_files_to_also_delete[@]/#/$HOME/}" | xargs -0 rm -rf
+

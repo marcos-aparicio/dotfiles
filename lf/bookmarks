@@ -1,0 +1,64 @@
+# vim: ft=conf
+
+# deleting mappings
+map gh
+
+map gD cd ~/Documents
+map gd cd ~/Downloads
+map gt cd ~/Tmp
+
+# configs
+map gck cd ~/.config/kitty
+map gcl cd ~/.config/lf
+map gcr cd ~/.config/ranger
+map gcc cd ~/.config
+map gca cd ~/.config/awesome
+map gci cd ~/.config/vimiv
+map gcn cd ~/.config/nvim
+map gcz cd ~/.config/zsh
+map gct cd ~/.config/task
+map gcv cd ~/.config/vit
+
+# access to local scripts
+map glb cd ~/.local/bin
+map gls cd ~/.local/share
+
+# configs que dan mas miedo
+map geh cd /etc/httpd
+map gee cd /etc
+
+# some main home directories
+map ghh cd ~
+map ghx cd ~/Xournal
+map ghp cd ~/Pictures
+map ghd cd ~/Documents
+map ghv cd ~/Videos
+map gho cd ~/Vaults/
+map ghm cd ~/Music
+map ghb cd ~/Backups
+
+# programming related
+map gpp cd ~/Programming
+map gpe cd ~/Programming/projects
+map gpb cd ~/Books
+map gph cd ~/Programming/helper
+
+map ghh cd ~
+map ghx cd ~/Xournal
+map ghp cd ~/Pictures
+map ghd cd ~/Documents
+map ghv cd ~/Videos
+map gho cd ~/Vaults/
+map ghm cd ~/Music
+map ghb cd ~/Backups
+
+# programming related
+map gpp cd ~/Programming
+map gpe cd ~/Programming/projects
+map gpb cd ~/Books
+map gph cd ~/Programming/helper
+
+
+# work stuff
+map gpww cd ~/Programming/professional_projects/
+map gpwb cd ~/Programming/professional_projects/The-Between-The-Lines-Project/website/code/

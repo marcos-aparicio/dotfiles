@@ -1,0 +1,44 @@
+- defaults:
+    link:
+      create: true
+      relink: true
+    shell:
+      quiet: true
+
+- clean: ['~', '~/.config', '~/.gnupg', '~/.local/scripts']
+
+- link:
+  ~/.config/starship: starship
+  ~/.config/lf: lf
+  ~/.config/lazygit: lazygit
+  ~/.config/ideavim: ideavim
+  ~/.config/git: git
+  ~/.config/picom: picom
+  ~/.config/wezterm: wezterm
+  ~/.config/readline: readline
+  ~/.config/Code/User/keybindings.json: vscode/keybindings.json
+  ~/.config/Code/User/settings.json: vscode/settings.json
+  ~/.config/ctpv: ctpv
+  ~/.config/sioyek: sioyek
+  ~/.config/bat: bat
+  ~/.config/alacritty: alacritty
+  ~/.config/xorg: xorg
+  ~/.config/zsh: zsh
+  ~/.config/tmux: tmux
+  ~/.config/opencode: opencode
+  # systemd
+  ~/.config/systemd/user/espanso.service: systemd/espanso.service
+  ~/.config/systemd/user/greenclip.service: systemd/greenclip.service
+  ~/.config/systemd/user/redshift.service: systemd/redshift.service
+  ~/.config/systemd/user/syncthing.service: systemd/syncthing.service
+  # scripts
+  ~/.local/scripts: scripts
+  # submodules
+  ~/.config/nvim: nvim
+  ~/.config/awesome: awesome
+  ~/.config/rofi: rofi
+
+- shell:
+  - git submodule sync --recursive
+  # the following have to run after linking ~/.gitconfig
+  - git update-submodules
