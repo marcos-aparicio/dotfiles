@@ -1,0 +1,43 @@
+# espanso match file for tests(being lazy to write the full description)
+
+matches:
+  - trigger: ",,reg"
+    replace: "
+      marcos\tmarcos.aparicio593@gmail.com\t
+      marcosmarcos\t
+      marcosmarcos\t\t"
+    vars:
+      - name: email
+        type: shell
+        params:
+          cmd: "echo $(cat /dev/urandom | tr -dc 'a-zA-Z0-9' | fold -w 10 | head -n 1)@gmail.com"
+  - trigger: ",,admin"
+    replace: "marcos@marcos.com\t{{pass}}\t\t\t\t\n"
+    vars:
+      - name: pass
+        type: shell
+        params:
+          cmd: "pass show capstone/admin"
+  - trigger: ",,log"
+    replace: "test@example.com\tpassword\t\t\t\t\n"
+  - trigger: ",,a"
+    replace: "nombrejl\tdescriptionn\t\thttps://daisyui.com/components/alert/\t"
+  - trigger: ",,b"
+    replace: "Arch Linux News\tdescriptionn\t\thttps://daisyui.com/components/alert/\t"
+  - trigger: ",,2log"
+    replace: "test2@example.com\tpassword\t\t\t\t\n"
+  - trigger: ",,1"
+    replace: "mem1\tmem1\t"
+  # - trigger: ",,2"
+  #   replace: "edit1\tedit1\t"
+  - trigger: ",,art"
+    replace: "{{title}}\t{{desc}}\t"
+    vars:
+      - name: title
+        type: shell
+        params:
+          cmd: "echo $(cat /dev/urandom | tr -dc 'a-zA-Z' | fold -w 5 | head -n 1)"
+      - name: desc
+        type: shell
+        params:
+          cmd: "echo $(cat /dev/urandom | tr -dc 'a-zA-Z' | fold -w 40 | head -n 1)"
