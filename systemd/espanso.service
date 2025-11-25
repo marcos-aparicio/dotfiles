@@ -2,7 +2,7 @@
 Description=espanso
 
 [Service]
-ExecStart=/home/marcos/.local/share/appman/espanso/espanso launcher
+ExecStart=/usr/bin/espanso launcher
 Restart=on-failure
 RestartSec=3
 
