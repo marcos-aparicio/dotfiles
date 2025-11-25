@@ -34,6 +34,7 @@
     ~/.config/systemd/user/redshift.service: systemd/redshift.service
     ~/.config/systemd/user/syncthing.service: systemd/syncthing.service
     ~/.config/systemd/user/tmux-on-boot.service: systemd/tmux-on-boot.service
+    ~/.config/systemd/user/tmux-on-login.service: systemd/tmux-on-login.service
     # scripts
     ~/.local/scripts: scripts
     # submodules

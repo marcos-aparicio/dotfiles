@@ -1,0 +1,12 @@
+; WSL 2 supports systemd only if enabled in `/etc/wsl.conf` and you’re using a recent Windows build.
+; This will be used for my wsl
+[Unit]
+Description=Start tmux session on login
+
+[Service]
+Type=forking
+ExecStart=/usr/bin/tmux new-session -s marcos-marcos -d
+ExecStop=/usr/bin/tmux kill-session -t marcos-marcos
+
+[Install]
+WantedBy=default.target
