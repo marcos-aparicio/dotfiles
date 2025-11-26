@@ -1,0 +1,23 @@
+#!/bin/bash
+
+# Get checked out branches in all worktrees
+checked_out=$(git worktree list | awk '{print $2}' | xargs -I{} git -C {} rev-parse --abbrev-ref HEAD)
+
+# Get all remote branches
+remote_branches=$(git ls-remote --heads origin | awk '{print $2}' | sed 's|refs/heads/||')
+
+skipped=()
+for branch in $remote_branches; do
+  if echo "$checked_out" | grep -qx "$branch"; then
+    skipped+=("$branch")
+  else
+    git fetch origin "refs/heads/$branch:refs/heads/$branch"
+  fi
+done
+
+if [ ${#skipped[@]} -gt 0 ]; then
+  echo "Skipped branches checked out in worktrees:"
+  for b in "${skipped[@]}"; do
+    echo "  $b"
+  done
+fi

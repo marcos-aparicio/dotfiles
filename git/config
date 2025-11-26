@@ -9,6 +9,7 @@
   open = "!f() { url=$(git remote -v | grep origin | head -n 1 | awk '{print $2}' | sed 's/git@//g; s/:/\\//g; s/^/https:\\/\\//; s/\\.git$//'); branch=$(git branch --show-current); xdg-open \"$url/tree/$branch\"; }; f"
   set-ssh-key = "!bash ~/.local/scripts/git-set-ssh-key"
   clone-with-diff-key="!bash ~/.local/scripts/git-clone-with-diff-ssh-key"
+  safe-fetch = "!~/.local/scripts/git-safe-fetch"
 
 [filter "lfs"]
 	clean = git-lfs clean -- %f
