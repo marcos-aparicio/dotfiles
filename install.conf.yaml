@@ -46,3 +46,5 @@
 - shell:
   - git submodule sync --recursive
   - git submodule update --init --recursive
+  - ./awesome/install.sh
+  - ./nvim/install.sh
