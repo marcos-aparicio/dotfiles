@@ -28,7 +28,8 @@
     ~/.config/tmux: tmux
     ~/.config/espanso: espanso
     ~/.config/opencode: opencode
-    ~/.config/qutebrowser: qutebrowser
+    ~/.config/qutebrowser:
+      path: qutebrowser
     # systemd
     ~/.config/systemd/user/espanso.service: systemd/espanso.service
     ~/.config/systemd/user/greenclip.service: systemd/greenclip.service
