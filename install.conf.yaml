@@ -28,6 +28,7 @@
     ~/.config/tmux: tmux
     ~/.config/espanso: espanso
     ~/.config/opencode: opencode
+    ~/.config/speech-dispatcher: speech-dispatcher
     ~/.config/qutebrowser:
       path: qutebrowser
     # systemd
