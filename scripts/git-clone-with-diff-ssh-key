@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+
+set -e
+
+if ! command -v fzf >/dev/null 2>&1; then
+  echo "fzf is not installed. Please install fzf to use this script."
+  exit 1
+fi
+
+KEY=$(find ~/.ssh -type f ! -name '*.pub' | fzf --prompt="Select SSH key: ")
+
+if [ -z "$KEY" ]; then
+  echo "No key selected. Aborting."
+  exit 1
+fi
+
+GIT_SSH_COMMAND="ssh -i $KEY" git clone "$@"

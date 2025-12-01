@@ -7,7 +7,7 @@
 	superlog = log --graph --abbrev-commit --decorate --date=relative --format=format:'%C(bold blue)%h%C(reset) - %C(bold green)(%ar)%C(reset) %C(white)%s%C(reset) %C(dim white)- %an%C(reset)%C(bold yellow)%d%C(reset)' --all
 	this = git symbolic-ref --short HEAD symbolic-ref --short HEAD
   open = "!f() { url=$(git remote -v | grep origin | head -n 1 | awk '{print $2}' | sed 's/git@//g; s/:/\\//g; s/^/https:\\/\\//; s/\\.git$//'); branch=$(git branch --show-current); xdg-open \"$url/tree/$branch\"; }; f"
-  set-ssh-key = "!bash ~/.local/scripts/git-set-ssh-key"
+  set-ssh-key = "!bash ~/.local/scripts/git-change-ssh-key"
   clone-with-diff-key="!bash ~/.local/scripts/git-clone-with-diff-ssh-key"
   safe-fetch = "!~/.local/scripts/git-safe-fetch"
   redate = "!~/.local/scripts/git-redate"
