@@ -10,6 +10,7 @@
   set-ssh-key = "!bash ~/.local/scripts/git-set-ssh-key"
   clone-with-diff-key="!bash ~/.local/scripts/git-clone-with-diff-ssh-key"
   safe-fetch = "!~/.local/scripts/git-safe-fetch"
+  redate = "!~/.local/scripts/git-redate"
 
 [filter "lfs"]
 	clean = git-lfs clean -- %f
