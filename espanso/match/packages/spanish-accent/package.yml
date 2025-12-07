@@ -1,5 +1,9 @@
 # Triggers customized by marcos for personal use, all credit goes to the package author
 matches:
+  - trigger: "'?'"
+    replace: "¿"
+  - trigger: "'!'"
+    replace: "¡"
   - trigger: "'n'"
     replace: "ñ"
   - trigger: "'N'"
