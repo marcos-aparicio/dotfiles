@@ -1,45 +1,44 @@
 session_name: dotfiles
+start_directory: ~/dotfiles
 windows:
-
   - window_name: awesome
-    shell_command_before:
-      - cd ~/dotfiles/awesome
+    start_directory: awesome
     panes:
       - shell_command:
           - nvim rc.lua
 
   - window_name: nvim
     layout: tiled
-    shell_command_before:
-      - cd ~/dotfiles/nvim
+    start_directory: nvim
     panes:
       - shell_command:
           - nvim init.lua
 
   - window_name: scripts
-    shell_command_before:
-      - cd ~/dotfiles/scripts
+    start_directory: scripts
     panes:
       - shell_command:
           - nvim
 
   - window_name: zsh
-    shell_command_before:
-      - cd ~/dotfiles/zsh
+    start_directory: zsh
     panes:
       - shell_command:
           - nvim .zshrc
 
   - window_name: tmux
-    shell_command_before:
-      - cd ~/dotfiles/tmux
+    start_directory: tmux
     panes:
       - shell_command:
           - nvim tmux.conf
 
   - window_name: all
-    shell_command_before:
-      - cd ~/dotfiles
     panes:
       - shell_command:
           - ls .
+
+  - window_name: tmuxp
+    start_directory: tmuxp
+    panes:
+      - shell_command:
+          - nvim dotfiles.yml

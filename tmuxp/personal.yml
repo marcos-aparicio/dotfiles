@@ -1,0 +1,16 @@
+session_name: personal
+start_directory: ~/Documents/Areas/Obsidian/personal
+windows:
+  - window_name: notes
+    shell_command_before:
+      - git pull origin HEAD
+    panes:
+      - shell_command:
+        - nvim "./diary/$(date +%Y-%m-%d).md"
+
+  - window_name: zsh
+
+  - window_name: ai
+    panes:
+      - shell_command:
+          - opencode
