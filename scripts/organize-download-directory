@@ -47,7 +47,7 @@ for file in $pattern; do
     dir="graphics"
   elif [[ "$file" =~ \.pdf$ ]]; then
     dir="pdfs"
-  elif [[ "$file" =~ \.(doc|xlsx|docx|odt|txt|csv)$ ]]; then
+  elif [[ "$file" =~ \.(doc|xlsx|docx|odt|txt|csv|tsv)$ ]]; then
     dir="docs"
   elif [[ "$file" =~ \.(epub)$ ]]; then
     dir="epubs"
