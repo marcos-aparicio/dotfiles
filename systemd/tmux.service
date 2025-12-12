@@ -1,0 +1,17 @@
+[Unit]
+Description=tmux on boot
+After=graphical-session.target
+Wants=graphical-session.target
+
+[Service]
+Type=oneshot
+ExecStart=/home/marcos/.config/systemd/scripts/start-tmux.sh
+ExecStop=/usr/bin/tmux kill-server
+KillMode=mixed
+TimeoutStopSec=10
+Restart=on-failure
+RestartSec=5
+RemainAfterExit=yes
+
+[Install]
+WantedBy=default.target
