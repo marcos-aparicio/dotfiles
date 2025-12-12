@@ -29,6 +29,7 @@
     ~/.config/espanso: espanso
     ~/.config/opencode: opencode
     ~/.config/speech-dispatcher: speech-dispatcher
+    ~/.config/tmuxp: tmuxp
     ~/.config/qutebrowser:
       path: qutebrowser
     # systemd
@@ -36,15 +37,13 @@
     ~/.config/systemd/user/greenclip.service: systemd/greenclip.service
     ~/.config/systemd/user/redshift.service: systemd/redshift.service
     ~/.config/systemd/user/syncthing.service: systemd/syncthing.service
-    ~/.config/systemd/user/tmux-on-boot.service: systemd/tmux-on-boot.service
-    ~/.config/systemd/user/tmux-on-login.service: systemd/tmux-on-login.service
+    ~/.config/systemd/user/tmux.service: systemd/tmux.service
     # scripts
     ~/.local/scripts: scripts
     # submodules
     ~/.config/nvim: nvim
     ~/.config/awesome: awesome
     ~/.config/rofi: rofi
-    ~/.config/tmuxp: tmuxp
 
 - shell:
   - git submodule sync --recursive
