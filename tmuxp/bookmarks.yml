@@ -1,0 +1,16 @@
+session_name: bookmarks
+start_directory: ~/Documents/Areas/Obsidian/bookmarks
+windows:
+  - window_name: main
+    shell_command_before:
+      - git pull origin HEAD
+    panes:
+      - shell_command:
+        - nvim index.md
+
+  - window_name: zsh
+
+  - window_name: ai
+    panes:
+      - shell_command:
+          - opencode
