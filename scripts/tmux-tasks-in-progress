@@ -1,0 +1,5 @@
+#!/bin/bash
+repo="$1"
+name="$2"
+count=$(rg --count '^- \[-\].*#_progress' "$repo" | awk -F: '{sum += $2} END {print (sum ? sum : 0)}')
+echo "$name: $count"
