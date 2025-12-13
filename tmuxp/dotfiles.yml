@@ -7,7 +7,7 @@ windows:
       - shell_command:
           - nvim rc.lua
 
-  - window_name: nvim
+  - window_name: neovim
     layout: tiled
     start_directory: nvim
     panes:
