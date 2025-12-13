@@ -14,3 +14,8 @@ windows:
     panes:
       - shell_command:
           - opencode
+
+  - window_name: ikhal
+    panes:
+      - shell_command:
+          - ikhal
