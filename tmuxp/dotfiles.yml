@@ -32,6 +32,12 @@ windows:
       - shell_command:
           - nvim tmux.conf
 
+  - window_name: yazi
+    start_directory: yazi
+    panes:
+      - shell_command:
+          - nvim keymap.toml
+
   - window_name: all
     panes:
       - shell_command:

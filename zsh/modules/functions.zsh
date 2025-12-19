@@ -66,3 +66,11 @@ send_to_kindle(){
 load_openai_key(){
   export OPENAI_API_KEY=$(pass show personal/api_keys/openai)
 }
+
+y() {
+	local tmp="$(mktemp -t "yazi-cwd.XXXXXX")" cwd
+	yazi "$@" --cwd-file="$tmp"
+	IFS= read -r -d '' cwd < "$tmp"
+	[ -n "$cwd" ] && [ "$cwd" != "$PWD" ] && builtin cd -- "$cwd"
+	\rm -f -- "$tmp"
+}

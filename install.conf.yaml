@@ -11,6 +11,7 @@
 - link:
     ~/.config/starship: starship
     ~/.config/lf: lf
+    ~/.config/yazi: yazi
     ~/.config/lazygit: lazygit
     ~/.config/ideavim: ideavim
     ~/.config/git: git

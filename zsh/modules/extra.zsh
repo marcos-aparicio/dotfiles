@@ -5,6 +5,9 @@ if [ -f "$LFCD" ]; then
     alias lf='lfcd'
 fi
 
+# to get use to yazi
+alias lf="y"
+
 
 # Lazy load sdkman only when 'sdk' is called
 export SDKMAN_DIR="$XDG_DATA_HOME/sdkman"
