@@ -41,4 +41,129 @@ matches:
         type: shell
         params:
           cmd: "echo 'Hello from your shell'"
-  # And much more! For more information, visit the docs: https://espanso.org/docs/
+
+  - trigger: "`e`"
+    replace: "è"
+  - trigger: "^e^"
+    replace: "ê"
+
+  - trigger: ":e:"
+    replace: "ë"
+
+  - trigger: "^o^"
+    replace: "ô"
+
+  - trigger: "`a`"
+    replace: "à"
+
+  - trigger: ",s,"
+    replace: "ş"
+
+  - trigger: ":o:"
+    replace: "ö"
+  - trigger: "^a^"
+    replace: "â"
+
+  - trigger: "^i^"
+    replace: "î"
+
+  - trigger: ":i:"
+    replace: "ï"
+
+  - trigger: "`u`"
+    replace: "ù"
+
+  - trigger: "^u^"
+    replace: "û"
+
+  - trigger: ":u:"
+    replace: "ü"
+
+  - trigger: ":oe:"
+    replace: "œ"
+
+  - trigger: ":ae:"
+    replace: "æ"
+
+  - trigger: ":y:"
+    replace: "ÿ"
+
+  - trigger: ",c,"
+    replace: "ç"
+
+  - trigger: "`E`"
+    replace: "È"
+
+  - trigger: "^E^"
+    replace: "Ê"
+
+  - trigger: ":E:"
+    replace: "Ë"
+
+  - trigger: "^O^"
+    replace: "Ô"
+
+  - trigger: "`A`"
+    replace: "À"
+
+  - trigger: "^A^"
+    replace: "Â"
+
+  - trigger: "^I^"
+    replace: "Î"
+
+  - trigger: ":I:"
+    replace: "Ï"
+
+  - trigger: "`U`"
+    replace: "Ù"
+
+  - trigger: "^U^"
+    replace: "Û"
+
+  - trigger: ":U:"
+    replace: "Ü"
+
+  - trigger: "::oe"
+    replace: "œ"
+
+  - trigger: ":OE"
+    replace: "Œ"
+
+  - trigger: ":AE"
+    replace: "Æ"
+
+  - trigger: ":Y:"
+    replace: "Ÿ"
+
+  - trigger: ",C,"
+    replace: "Ç"
+
+  - trigger: "'?'"
+    replace: "¿"
+  - trigger: "'!'"
+    replace: "¡"
+  - trigger: "'n'"
+    replace: "ñ"
+  - trigger: "'N'"
+    replace: "Ñ"
+  - trigger: "'a'"
+    replace: "á"
+  - trigger: "'e'"
+    replace: "é"
+  - trigger: "'i'"
+    replace: "í"
+  - trigger: "'o'"
+    replace: "ó"
+  - trigger: "'u'"
+    replace: "ú"
+  - trigger: "'A'"
+    replace: "Á"
+  - trigger: "'E'"
+    replace: "É"
+  - trigger: "'I'"
+    replace: "Í"
+  - trigger: "'O'"
+    replace: "Ó"
+  - trigger: "'U'"
+    replace: "Ú"
