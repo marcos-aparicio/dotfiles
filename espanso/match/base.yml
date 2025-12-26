@@ -31,9 +31,13 @@ matches:
         type: date
         params:
           format: "%Y-%m-%dT%H:%M:%S"
-  - trigger: ":statement"
-    replace: "I Marcos Aparicio, 000861176 certify that this material is my original work. No other person's work has been used without due acknowledgement. I have not made my work available to anyone else."
-  # Print the output of a shell command
+  - trigger: "::ts"
+    replace: "{{timestamp}}"
+    vars:
+      - name: timestamp
+        type: shell
+        params:
+          cmd: "date +%s"
   - trigger: ":shell"
     replace: "{{output}}"
     vars:
