@@ -1,0 +1,4 @@
+[mgr]
+append_keymap = [
+  { on = [ "W"], run = "shell 'ripdrag \"$@\"'", desc = "Run ripdrag on the curent file" }
+]
