@@ -1,0 +1,9 @@
+[opener]
+pdf = [
+	{ run = 'sioyek "$@"', orphan = true, for = "unix" },
+]
+
+[open]
+rules = [
+  { name = "*.pdf", use = ["pdf"] }
+]
