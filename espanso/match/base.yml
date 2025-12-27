@@ -46,6 +46,10 @@ matches:
         params:
           cmd: "echo 'Hello from your shell'"
 
+  - trigger: "::<"
+    replace: "«"
+  - trigger: "::>"
+    replace: "»"
   - trigger: "`e`"
     replace: "è"
   - trigger: "^e^"
