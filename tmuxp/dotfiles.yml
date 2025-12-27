@@ -48,3 +48,9 @@ windows:
     panes:
       - shell_command:
           - nvim dotfiles.yml
+
+  - window_name: espanso
+    start_directory: espanso
+    panes:
+      - shell_command:
+          - nvim match/base.yml
