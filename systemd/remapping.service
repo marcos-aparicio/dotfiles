@@ -6,6 +6,7 @@ After=graphical-session.target
 
 [Service]
 Type=oneshot
+Environment=DISPLAY=:0
 # Use an absolute path to your script
 ExecStart=/home/marcos/.config/systemd/scripts/apply-xmodmap.sh
 
