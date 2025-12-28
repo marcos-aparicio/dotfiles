@@ -1,0 +1,8 @@
+[Unit]
+Description=Organizes files in the Downloads directory
+[Service]
+ExecStart=/bin/bash -c 'inotifywait -m -e create,modify,moved_to,moved_from %h/Downloads | while read -r line; do sleep 2 && %h/.local/scripts/organize-download-directory; done'
+Restart=always
+RestartSec=3
+[Install]
+WantedBy=default.target
