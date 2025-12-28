@@ -1,8 +1,7 @@
 [Unit]
 Description=Apply conditional xmodmap configuration
-
-# This ensures it runs after the graphical environment is ready
 After=graphical-session.target
+
 
 [Service]
 Type=oneshot
@@ -11,5 +10,4 @@ Environment=DISPLAY=:0
 ExecStart=/home/marcos/.config/systemd/scripts/apply-xmodmap.sh
 
 [Install]
-# This tells systemd to start the service as part of the main graphical session
-WantedBy=graphical-session.target
+WantedBy=default.target
