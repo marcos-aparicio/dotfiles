@@ -46,3 +46,9 @@ export WORDLISTS=$XDG_DATA_HOME/wordlists
 export BROWSER=zen-browser
 export MANPAGER="nvim +Man!"
 export DOTNET_CLI_TELEMETRY_OPTOUT=1
+
+if [[ "$XDG_SESSION_TYPE" == "wayland" ]]; then
+  export ZSH_SYSTEM_CLIPBOARD_METHOD=wl-copy
+else
+  export ZSH_SYSTEM_CLIPBOARD_METHOD=xsc
+fi
