@@ -1,0 +1,223 @@
+#!/bin/bash
+# fzf-mount: Select and mount/unmount/toggle remote systems using fzf
+
+set -euo pipefail
+
+# Color output
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+NC='\033[0m' # No Color
+
+CONFIG_FILE=""
+if [[ -n "${FZF_MOUNT_CONFIG:-}" && -f "$FZF_MOUNT_CONFIG" ]]; then
+    CONFIG_FILE="$FZF_MOUNT_CONFIG"
+elif [[ -f "${XDG_CONFIG_HOME:-$HOME/.config}/fzf-mount/config.ini" ]]; then
+    CONFIG_FILE="${XDG_CONFIG_HOME:-$HOME/.config}/fzf-mount/config.ini"
+elif [[ -f "$HOME/.fzf-mount.ini" ]]; then
+    CONFIG_FILE="$HOME/.fzf-mount.ini"
+fi
+
+if [[ -z "$CONFIG_FILE" || ! -f "$CONFIG_FILE" ]]; then
+    echo -e "${RED}Error: Config file not found. Searched for .fzf-mount.ini, \$XDG_CONFIG_HOME/fzf-mount/config.ini, and \$FZF_MOUNT_CONFIG.${NC}" >&2
+    exit 1
+fi
+
+
+usage() {
+    echo "Usage: $0 {mount|unmount|toggle-mode} [readonly|write]"
+    echo "  mount [readonly|write] - Mount a remote system (choose mode or pass as arg)"
+    echo "  unmount                - Unmount a remote system"
+    echo "  toggle-mode            - Toggle between read-only and write mode for a mounted system"
+    exit 1
+}
+
+if [[ ! -f "$CONFIG_FILE" ]]; then
+    echo -e "${RED}Error: Config file not found at $CONFIG_FILE${NC}" >&2
+    exit 1
+fi
+
+is_mounted() {
+    local mount_path="$1"
+    mount_path="${mount_path/\~/$HOME}"
+    mountpoint -q "$mount_path" 2>/dev/null
+}
+
+get_mount_mode() {
+    local mount_path="$1"
+    mount_path="${mount_path/\~/$HOME}"
+    if grep -qs "$mount_path" /proc/mounts; then
+        if grep -qs "$mount_path.* ro[ ,]" /proc/mounts; then
+            echo "readonly"
+        else
+            echo "write"
+        fi
+    else
+        echo "unknown"
+    fi
+}
+
+list_sections_with_status() {
+    local sections
+    sections=$(crudini --get "$CONFIG_FILE" | grep -v '^$' | grep -v '^#')
+    while IFS= read -r section; do
+        local mount_path
+        mount_path=$(crudini --get "$CONFIG_FILE" "$section" mount_path 2>/dev/null || echo "")
+        if [[ -n "$mount_path" ]] && is_mounted "$mount_path"; then
+            local mode
+            mode=$(get_mount_mode "$mount_path")
+            echo "$section (mounted:$mode)"
+        else
+            echo "$section"
+        fi
+    done <<< "$sections"
+}
+
+do_mount() {
+    local mode_arg="${1:-}"
+    local selected
+    selected=$(list_sections_with_status | fzf --preview-window=hidden --prompt="Select system to mount: ")
+    if [[ -z "$selected" ]]; then
+        echo "No selection made"
+        exit 0
+    fi
+    selected="${selected%% *}" # Remove suffix
+
+    local mount_path
+    mount_path=$(crudini --get "$CONFIG_FILE" "$selected" mount_path)
+    mount_path="${mount_path/\~/$HOME}"
+
+    if is_mounted "$mount_path"; then
+        echo -e "${YELLOW}$selected is already mounted at $mount_path${NC}"
+        exit 0
+    fi
+
+    if [[ ! -d "$mount_path" ]]; then
+        echo -e "${YELLOW}Mount point $mount_path does not exist. Creating it...${NC}"
+        mkdir -p "$mount_path" || {
+            echo -e "${RED}Error: Could not create mount point${NC}" >&2
+            exit 1
+        }
+    fi
+
+    local mode cmd
+    if [[ "$mode_arg" == "readonly" || "$mode_arg" == "write" ]]; then
+        mode="$mode_arg"
+    else
+        mode=$(printf "readonly\nwrite" | fzf --prompt="Select mount mode: ")
+    fi
+
+    if [[ "$mode" == "readonly" ]]; then
+        cmd=$(crudini --get "$CONFIG_FILE" "$selected" readonly_cmd)
+    else
+        cmd=$(crudini --get "$CONFIG_FILE" "$selected" write_cmd)
+    fi
+
+    echo -e "${GREEN}Mounting $selected at $mount_path in $mode mode...${NC}"
+    if eval "$cmd"; then
+        echo -e "${GREEN}Successfully mounted $selected at $mount_path${NC}"
+    else
+        echo -e "${RED}Error: Failed to mount $selected${NC}" >&2
+        exit 1
+    fi
+}
+
+do_unmount() {
+    local selected
+    selected=$(list_sections_with_status | fzf --preview-window=hidden --prompt="Select system to unmount: ")
+    if [[ -z "$selected" ]]; then
+        echo "No selection made"
+        exit 0
+    fi
+    selected="${selected%% *}"
+
+    local mount_path
+    mount_path=$(crudini --get "$CONFIG_FILE" "$selected" mount_path)
+    mount_path="${mount_path/\~/$HOME}"
+
+    if ! is_mounted "$mount_path"; then
+        echo -e "${YELLOW}$selected is not currently mounted${NC}"
+        exit 0
+    fi
+
+    echo -e "${GREEN}Unmounting $selected from $mount_path...${NC}"
+    if sudo umount "$mount_path"; then
+        echo -e "${GREEN}Successfully unmounted $selected${NC}"
+    else
+        echo -e "${RED}Error: Failed to unmount $selected${NC}" >&2
+        exit 1
+    fi
+}
+
+do_toggle_mode() {
+    local mounted_sections
+    mounted_sections=$(list_sections_with_status | grep "(mounted:")
+    if [[ -z "$mounted_sections" ]]; then
+        echo -e "${YELLOW}No mounted systems to toggle mode.${NC}"
+        exit 0
+    fi
+
+    local selected
+    selected=$(echo "$mounted_sections" | fzf --preview-window=hidden --prompt="Select system to toggle mode: ")
+    if [[ -z "$selected" ]]; then
+        echo "No selection made"
+        exit 0
+    fi
+    selected="${selected%% *}"
+
+    local mount_path
+    mount_path=$(crudini --get "$CONFIG_FILE" "$selected" mount_path)
+    mount_path="${mount_path/\~/$HOME}"
+
+    if ! is_mounted "$mount_path"; then
+        echo -e "${YELLOW}$selected is not currently mounted${NC}"
+        exit 0
+    fi
+
+    local current_mode new_mode cmd
+    current_mode=$(get_mount_mode "$mount_path")
+    if [[ "$current_mode" == "readonly" ]]; then
+        new_mode="write"
+        cmd=$(crudini --get "$CONFIG_FILE" "$selected" write_cmd)
+    elif [[ "$current_mode" == "write" ]]; then
+        new_mode="readonly"
+        cmd=$(crudini --get "$CONFIG_FILE" "$selected" readonly_cmd)
+    else
+        echo -e "${RED}Could not determine current mode for $selected${NC}" >&2
+        exit 1
+    fi
+
+    echo -e "${GREEN}Toggling $selected from $current_mode to $new_mode mode...${NC}"
+    if sudo umount "$mount_path"; then
+        echo -e "${GREEN}Unmounted $selected${NC}"
+    else
+        echo -e "${RED}Error: Failed to unmount $selected${NC}" >&2
+        exit 1
+    fi
+
+    if eval "$cmd"; then
+        echo -e "${GREEN}Remounted $selected at $mount_path in $new_mode mode${NC}"
+    else
+        echo -e "${RED}Error: Failed to remount $selected${NC}" >&2
+        exit 1
+    fi
+}
+
+main() {
+    case "${1:-}" in
+        mount)
+            do_mount "${2:-}"
+            ;;
+        unmount)
+            do_unmount
+            ;;
+        toggle-mode)
+            do_toggle_mode
+            ;;
+        *)
+            usage
+            ;;
+    esac
+}
+
+main "$@"
