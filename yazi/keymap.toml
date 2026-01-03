@@ -1,4 +1,7 @@
 [mgr]
 append_keymap = [
-  { on = [ "W"], run = "shell 'ripdrag \"$@\"'", desc = "Run ripdrag on the curent file" }
+  { on = [ "W"], run = "shell 'ripdrag \"$@\"'", desc = "Run ripdrag on the curent file" },
+  { on = [ "M", "r"], run = "shell --block 'fzf-mount mount readonly'", desc = "Mount system (read-only)" },
+  { on = [ "M", "u"], run = "shell --block 'fzf-mount unmount'", desc = "Unmount system" },
+  { on = [ "M", "t"], run = "shell --block 'fzf-mount toggle-mode'", desc = "Toggle mount mode (ro/rw)" }
 ]
