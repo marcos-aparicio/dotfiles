@@ -4,6 +4,6 @@ pdf = [
 ]
 
 [open]
-append_rules = [
+prepend_rules = [
   { name = "*.pdf", use = ["pdf"] }
 ]
