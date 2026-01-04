@@ -1,5 +1,7 @@
 #!/bin/bash
-repo="$1"
-name="$2"
+repo_file="$HOME/.config/tmux/task_repo_name"
+parent_dir="/home/marcos/Documents/Areas/Obsidian"
+repo_name=$(cat "$repo_file")
+repo="$parent_dir/$repo_name"
 count=$(rg --count '^\s*- \[-\].*#_progress' "$repo" | awk -F: '{sum += $2} END {print (sum ? sum : 0)}')
-echo "$name: $count"
+echo "$repo_name: $count"

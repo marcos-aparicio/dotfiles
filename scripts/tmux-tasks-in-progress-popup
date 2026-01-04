@@ -1,4 +1,6 @@
 #!/bin/bash
-REPO="$1"
-NAME="$2"
-rg "^\s*- \[-\].*#_progress" "${REPO}${NAME}" -A 1 -B 1 --color=always | sed "s|${REPO}||g" | less -R
+repo_file="$HOME/.config/tmux/task_repo_name"
+parent_dir="/home/marcos/Documents/Areas/Obsidian"
+repo_name=$(cat "$repo_file")
+repo="$parent_dir/$repo_name"
+rg "^\s*- \[-\].*#_progress" "$repo" -A 1 -B 1 --color=always | sed "s|$parent_dir/||g" | less -R
