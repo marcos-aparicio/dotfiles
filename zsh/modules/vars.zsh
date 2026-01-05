@@ -28,7 +28,7 @@ additional_paths=(
 )
 additional_paths=$(echo "${additional_paths[@]}" | tr ' ' ':')
 # default paths
-export PATH=/usr/local/bin:$HOME/.local/bin:$PATH
+export PATH="$PATH:/usr/local/bin:$HOME/.local/bin"
 # additional paths
 export PATH="${additional_paths[@]}:$PATH"
 [ -v XDG_DATA_DIRS ] &&\
