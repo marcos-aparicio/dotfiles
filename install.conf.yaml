@@ -29,6 +29,7 @@
     ~/.config/xorg: xorg
     ~/.config/zsh: zsh
     ~/.config/tmux: tmux
+    ~/.config/mpd: mpd
     ~/.config/espanso: espanso
     ~/.config/opencode: opencode
     ~/.config/speech-dispatcher: speech-dispatcher
