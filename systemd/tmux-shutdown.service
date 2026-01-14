@@ -1,0 +1,11 @@
+[Unit]
+Description=Kill tmux server before shutdown
+Before=shutdown.target
+PartOf=tmux.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/tmux kill-server
+
+[Install]
+WantedBy=shutdown.target

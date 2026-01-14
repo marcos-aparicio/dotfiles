@@ -42,6 +42,7 @@
     ~/.config/systemd/user/redshift.service: systemd/redshift.service
     ~/.config/systemd/user/syncthing.service: systemd/syncthing.service
     ~/.config/systemd/user/tmux.service: systemd/tmux.service
+    ~/.config/systemd/user/tmux-shutdown.service: systemd/tmux-shutdown.service
     ~/.config/systemd/user/remapping.service: systemd/remapping.service
     ~/.config/systemd/user/download-organizer.service: systemd/download-organizer.service
     # scripts
