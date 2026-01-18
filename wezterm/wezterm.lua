@@ -50,6 +50,16 @@ local config = {
       mods = "CTRL|SHIFT",
       action = wezterm.action.SendString("\x1b[1;6C"),
     },
+    {
+      key = "L",
+      mods = "CTRL|SHIFT",
+      action = wezterm.action.DisableDefaultAssignment,
+    },
+    {
+      key = "D",
+      mods = "CTRL|SHIFT",
+      action = wezterm.action.ShowDebugOverlay,
+    },
   },
 }
 
