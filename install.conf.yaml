@@ -16,6 +16,7 @@
     ~/.config/yazi: yazi
     ~/.config/lazygit: lazygit
     ~/.config/ideavim: ideavim
+    ~/.config/vimiv: vimiv
     ~/.config/git: git
     ~/.config/picom: picom
     ~/.config/wezterm: wezterm
