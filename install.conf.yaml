@@ -11,6 +11,7 @@
 - link:
     ~/.config/starship: starship
     ~/.config/lf: lf
+    ~/.config/ncmpcpp: ncmpcpp
     ~/.config/fzf-mount: fzf-mount
     ~/.config/filesync: filesync
     ~/.config/yazi: yazi

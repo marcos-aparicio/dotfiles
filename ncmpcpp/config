@@ -1,0 +1,12 @@
+# vim: filetype=conf
+
+mpd_music_dir=~/Music
+tags_separator=|
+
+# for visualization
+visualizer_data_source = "/tmp/mpd.fifo"
+visualizer_output_name = "my_fifo"
+visualizer_in_stereo = "yes"
+visualizer_type = "spectrum"
+visualizer_look = "+|"
+lyrics_directory = "/home/marcos/.local/share/ncmpcpp/lyrics"
