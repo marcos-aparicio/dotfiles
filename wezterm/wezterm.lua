@@ -35,11 +35,21 @@ local config = {
     bottom = 5,
   },
   -- UI
-  enable_tab_bar = false,        -- no tab bar
-  exit_behavior_messaging = "None",       -- no confirmation when exiting
+  enable_tab_bar = false,           -- no tab bar
+  exit_behavior_messaging = "None", -- no confirmation when exiting
   window_close_confirmation = "NeverPrompt",
-  check_for_updates = false,     -- optional: avoid update popups
+  check_for_updates = false,        -- optional: avoid update popups
   keys = {
+    {
+      key = "Tab",
+      mods = "CTRL",
+      action = wezterm.action.SendKey { key = "Tab", mods = "CTRL" },
+    },
+    {
+      key = "Tab",
+      mods = "CTRL|SHIFT",
+      action = wezterm.action.SendKey { key = "Tab", mods = "CTRL|SHIFT" },
+    },
     {
       key = "LeftArrow",
       mods = "CTRL|SHIFT",
