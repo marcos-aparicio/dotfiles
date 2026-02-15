@@ -1,0 +1,259 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+BOOKMARKS_FILE="${HOME}/Documents/Areas/Obsidian/bookmarks/bookmarks.yml"
+TEMP_FILE="/tmp/bookmarks_edit_$$.yml"
+
+# Colors and styling
+help_color="#FF00AA"
+
+_rofi() {
+    rofi -dmenu -i -no-sort -theme-str 'mainbox { padding: 25% 5%;}' "$@"
+}
+
+# Parse YAML bookmarks into a formatted display
+parse_bookmarks() {
+    local filter="${1:-}"
+
+    yq eval '.bookmarks[] | [.title, .url, (.tags | join(",")), .id] | @tsv' "$BOOKMARKS_FILE" | \
+    awk -F'\t' -v OFS='\t' '{
+        title = $1
+        url = $2
+        tags = $3
+        id = $4
+        if (length(title) > 60) title = substr(title, 1, 60) "..."
+        if (length(url) > 50) url = substr(url, 1, 50) "..."
+        # Use separator character to hide ID in display but keep it for backend
+        print title, url, tags, "│" id
+    }' | \
+    column -s $'\t' -t | \
+    if [ -n "$filter" ]; then
+        grep -i "$filter" || true
+    else
+        cat
+    fi
+}
+
+# Parse tags from bookmarks
+parse_tags() {
+    yq -r '.bookmarks[].tags[]' "$BOOKMARKS_FILE" | sort | uniq -c | sort -rn | awk '{print $2 " (" $1 ")"}'
+}
+
+
+# Get bookmark ID from display line (hidden after │ separator)
+get_id_from_line() {
+    local line="$1"
+    # Extract everything after the last │ character
+    echo "${line##*│}"
+}
+
+# Get bookmark by ID
+get_bookmark_by_id() {
+    yq -r ".bookmarks[] | select(.id == \"$1\")" "$BOOKMARKS_FILE"
+}
+
+# Get title by ID
+get_title_from_id() {
+    yq -r ".bookmarks[] | select(.id == \"$1\") | .title" "$BOOKMARKS_FILE"
+}
+
+# Get URL by ID
+get_url_from_id() {
+    yq -r ".bookmarks[] | select(.id == \"$1\") | .url" "$BOOKMARKS_FILE"
+}
+
+# Get tags by ID
+get_tags_from_id() {
+    yq -r ".bookmarks[] | select(.id == \"$1\") | .tags | join(\", \")" "$BOOKMARKS_FILE"
+}
+
+# Open bookmark (type URL)
+on_bookmark_enter() {
+    local id="$1"
+    local url
+    url=$(get_url_from_id "$id")
+    xdotool type --clearmodifiers -- "$url"
+}
+
+# Edit bookmark
+edit_bookmark() {
+    local id="$1"
+    local title description url tags
+
+    title=$(get_title_from_id "$id")
+    url=$(get_url_from_id "$id")
+    tags=$(get_tags_from_id "$id")
+
+    # Show edit options
+    local content="1. title: $title
+2. url: $url
+3. tags: $tags"
+
+    local editmenu
+    editmenu=$(echo -e "< Return\n---\n${content}" | _rofi -p '> ')
+    local val=$?
+
+    [[ $val -eq 1 ]] && return 1
+    [[ $val -ne 0 ]] && return 1
+
+    case $editmenu in
+        "< Return")
+            return 0
+            ;;
+        1\.\ title:*)
+            edit_title "$id"
+            ;;
+        2\.\ url:*)
+            edit_url "$id"
+            ;;
+        3\.\ tags:*)
+            edit_tags "$id"
+            ;;
+        *)
+            return 1
+            ;;
+    esac
+}
+
+edit_title() {
+    local id="$1"
+    local current_title
+    current_title=$(get_title_from_id "$id")
+
+    local new_title
+    new_title=$(echo "" | _rofi -p "> " -filter "$current_title" -mesg "Edit Title and hit Enter")
+    local val=$?
+
+    if [[ $val -eq 0 && -n "$new_title" ]]; then
+        yq -i ".bookmarks[] |= if .id == \"$id\" then .title = \"$new_title\" else . end" "$BOOKMARKS_FILE"
+        echo "✓ Title updated"
+    fi
+}
+
+edit_url() {
+    local id="$1"
+    local current_url
+    current_url=$(get_url_from_id "$id")
+
+    local new_url
+    new_url=$(echo "" | _rofi -p "> " -filter "$current_url" -mesg "Edit URL and hit Enter")
+    local val=$?
+
+    if [[ $val -eq 0 && -n "$new_url" ]]; then
+        if [[ $new_url == http* ]]; then
+            yq -i ".bookmarks[] |= if .id == \"$id\" then .url = \"$new_url\" else . end" "$BOOKMARKS_FILE"
+            echo "✓ URL updated"
+        else
+            echo "✗ Not a valid URL. Must start with http"
+            sleep 1
+            edit_url "$id"
+        fi
+    fi
+}
+
+edit_tags() {
+    local id="$1"
+    local current_tags
+    current_tags=$(get_tags_from_id "$id")
+
+    local new_tags
+    new_tags=$(echo "" | _rofi -p "> " -filter "$current_tags" -mesg "Edit Tags (comma-separated) and hit Enter")
+    local val=$?
+
+    if [[ $val -eq 0 ]]; then
+        # Convert comma-separated tags to YAML array
+        local tags_array
+        tags_array=$(echo "$new_tags" | sed 's/,[[:space:]]*/\n/g' | sed 's/^/        - /' | tr '\n' '\n')
+
+        yq -i ".bookmarks[] |= if .id == \"$id\" then .tags = ($new_tags | split(\", \")) else . end" "$BOOKMARKS_FILE"
+        echo "✓ Tags updated"
+    fi
+}
+
+delete_bookmark() {
+    local id="$1"
+
+    local confirm
+    confirm=$(echo -e "1. Yes\n2. No" | _rofi -p '> ' -mesg "Really delete this bookmark?")
+
+    if [[ "$confirm" == "1. Yes" ]]; then
+        yq -i ".bookmarks |= map(select(.id != \"$id\"))" "$BOOKMARKS_FILE"
+        echo "✓ Bookmark deleted"
+    fi
+}
+
+# Add new bookmark
+add_bookmark() {
+    local url title tags
+
+    # Get URL from clipboard or manual entry
+    url=$(echo "$(xclip -o 2>/dev/null || echo '')" | _rofi -p '> ' -mesg "Enter URL (or paste from clipboard)")
+    local val=$?
+
+    if [[ $val -eq 1 ]]; then
+        return 1
+    elif [[ $val -ne 0 ]]; then
+        return 1
+    fi
+
+    if [[ ! $url == http* ]]; then
+        echo "✗ Not a valid URL. Must start with http"
+        return 1
+    fi
+
+    # Get title
+    title=$(echo "" | _rofi -p '> ' -mesg "Enter title")
+    val=$?
+
+    if [[ $val -ne 0 ]]; then
+        return 1
+    fi
+
+    # Get tags
+    tags=$(echo "" | _rofi -p '> ' -mesg "Enter tags (comma-separated)")
+    val=$?
+
+    if [[ $val -ne 0 ]]; then
+        return 1
+    fi
+
+    # Generate new ID
+    local new_id
+    new_id=$(head -c 8 /dev/urandom | base64 | tr '/' '_' | tr '+' '-' | cut -c 1-8)
+
+    # Convert tags to array
+    local tags_array="[]"
+    if [[ -n "$tags" ]]; then
+        tags_array=$(echo "$tags" | yq -r 'split(", ") | @json')
+    fi
+
+    # Add bookmark to YAML
+    yq -i ".bookmarks += [{
+        id: \"$new_id\",
+        title: \"$title\",
+        url: \"$url\",
+        tags: $tags_array,
+        description: \"\"
+    }]" "$BOOKMARKS_FILE"
+
+    echo "✓ Bookmark added"
+}
+
+# Main menu loop
+main() {
+    local content menu val
+
+    content=$(parse_bookmarks)
+    menu=$(echo "${content}" | _rofi -p 'Bookmark')
+    val=$?
+
+    if [[ $val -eq 0 && -n "$menu" ]]; then
+        local id
+        id=$(get_id_from_line "$menu")
+        on_bookmark_enter "$id"
+    fi
+}
+
+# Start the script
+mode=bookmarks main
