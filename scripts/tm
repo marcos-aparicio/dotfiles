@@ -1,0 +1,44 @@
+#!/bin/bash
+
+TMUXP_REPO="$HOME/dotfiles/tmuxp"
+
+# Extract session name from a config file
+get_session_name() {
+	yq .session_name "$1" 2>/dev/null
+}
+
+# Check if a tmux session is currently active
+is_session_active() {
+	tmux has-session -t "$1" 2>/dev/null
+}
+
+# Format session output with indicator if active
+format_session_line() {
+	local file="$1"
+	local session=$(get_session_name "$file")
+
+	if [ -z "$session" ]; then
+		return 1
+	fi
+
+	local marker=""
+	if is_session_active "$session"; then
+		marker=" *"
+	fi
+
+	# Output: display_name<tab>file_path<tab>session_name
+	printf "%s\t%s\t%s\n" "$session$marker" "$file" "$session"
+}
+
+# Find all config files and format them
+find_sessions() {
+	find "$TMUXP_REPO" -type f \( -name '*.yaml' -o -name '*.yml' \) | while read file; do
+		format_session_line "$file"
+	done
+}
+
+# Main: select a session and load it
+selected=$(find_sessions | fzf --delimiter=$'\t' --with-nth=1 --preview 'bat --color=always {2}')
+file_path=$(echo "$selected" | cut -f2)
+tmuxp load -y "$file_path"
+
