@@ -55,6 +55,7 @@ fi
 alias vim="vim -u ~/.config/vim/init.vim"
 alias lg="lazygit"
 alias v="nvim "
+alias oc="opencode"
 alias rm="trash -vi"
 alias abook="abook -C $ABOOKRC --datafile $ABOOKDATA"
 alias mbsync="mbsync -c \"$HOME/.config/isync/mbsyncrc\""
