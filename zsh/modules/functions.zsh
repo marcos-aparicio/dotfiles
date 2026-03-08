@@ -74,3 +74,24 @@ y() {
 	[ -n "$cwd" ] && [ "$cwd" != "$PWD" ] && builtin cd -- "$cwd"
 	\rm -f -- "$tmp"
 }
+
+to_avif() {
+	local count=0
+	for image in *.{jpg,jpeg,png,webp,gif}(N); do
+		if [ -f "$image" ]; then
+			local output="${image%.*}.avif"
+			local temp_resized="${image%.*}_resized.png"
+			echo "Converting $image to $output..."
+			magick "$image" -resize 1000x1000\> "$temp_resized"
+			avifenc -s 8 "$temp_resized" "$output" 2>/dev/null
+			rm -f "$temp_resized"
+			if [ $? -eq 0 ]; then
+				((count++))
+				echo "✓ $output"
+			else
+				echo "✗ Failed to convert $image"
+			fi
+		fi
+	done
+	echo "Converted $count images to AVIF"
+}
