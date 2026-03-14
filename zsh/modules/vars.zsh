@@ -24,7 +24,8 @@ additional_paths=(
     $HOME/.cargo/bin
     $HOME/.opencode/bin
     /opt/sioyek/
-    $HOME/.opencode/bin:$PATH
+    $HOME/.cache/.bun/bin:
+    $HOME/.opencode/bin
 )
 additional_paths=$(echo "${additional_paths[@]}" | tr ' ' ':')
 # default paths
