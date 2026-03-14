@@ -20,6 +20,31 @@ description = "Show an icon when there's more than 0 started task(s)"
 format = ' 🚨 '
 when ='''! test -z "$(task active 2>/dev/null)" '''
 
+[custom.timewarrior]
+description = "Show current timewarrior tracking (tag and time spent)"
+command = '''
+tags=$(timew get dom.active.tags 2>/dev/null)
+# Get start time (already in parseable format)
+start=$(timew get dom.active.start)
+# Convert to seconds since epoch
+start_epoch=$(date -d "$start" +%s)
+current_epoch=$(date +%s)
+# Calculate elapsed seconds
+elapsed=$((current_epoch - start_epoch))
+# Calculate days, hours, minutes
+days=$((elapsed / 86400))
+hours=$(((elapsed % 86400) / 3600))
+minutes=$(((elapsed % 3600) / 60))
+# Build output, skipping zeros
+output=""
+[ $days -gt 0 ] && output+="${days}d"
+[ $hours -gt 0 ] && [ -z "$output" ] && output+="${hours}h" || ([ $hours -gt 0 ] && output+=" ${hours}h")
+[ $minutes -gt 0 ] && [ -z "$output" ] && output+="${minutes}m" || ([ $minutes -gt 0 ] && output+=" ${minutes}m")
+echo "$tags $output"
+'''
+format = '⏱️  $output '
+when = '''! test -z "$(timew get dom.active.duration 2>/dev/null | grep -v '^0$')"'''
+
 [time]
 disabled = false
 time_format = '%V'
