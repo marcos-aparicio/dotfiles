@@ -27,10 +27,6 @@ appman() {
   command appman "$@"
 }
 
-# setting up tty stuff
-export GPG_TTY=$(tty)
-gpg-connect-agent updatestartuptty /bye >/dev/null
-
 
 # setting up fzf settings
 # extracted from Josean Martinez video:
@@ -49,10 +45,19 @@ _fzf_compgen_dir(){
 }
 
 bindkey -r '^G'
-if [[ ! -d "$XDG_DATA_HOME/zsh/fzf-git.sh" ]]; then
-  git clone https://github.com/junegunn/fzf-git.sh.git "$XDG_DATA_HOME/zsh/fzf-git.sh"
-fi
-source "$XDG_DATA_HOME/zsh/fzf-git.sh/fzf-git.sh"
 
-eval "$(direnv hook zsh)"
+# Lazy load fzf-git - defer to background
+if [[ ! -d "$XDG_DATA_HOME/zsh/fzf-git.sh" ]]; then
+  git clone https://github.com/junegunn/fzf-git.sh.git "$XDG_DATA_HOME/zsh/fzf-git.sh" 2>/dev/null &
+else
+  # Load asynchronously in background
+  (source "$XDG_DATA_HOME/zsh/fzf-git.sh/fzf-git.sh" 2>/dev/null &)
+fi
+
+# Lazy load direnv - only on first use
+direnv_lazy_init() {
+  eval "$(direnv hook zsh)"
+  unset -f direnv_lazy_init
+}
+alias direnv="direnv_lazy_init && direnv"
 
