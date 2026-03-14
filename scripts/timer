@@ -17,14 +17,18 @@ while [[ "$#" -gt 0 ]]; do
     esac
     shift
 done
-notification_dir="${XDG_DATA_HOME:-$HOME/.local/share}/sounds"
-notification_sound="$notification_dir/clock-alarm-8761.mp3"
+notification_sound=""
+for dir in "$HOME/.local/share" ${XDG_DATA_DIRS//:/ }; do
+    if [[ -f "$dir/sounds/freedesktop/stereo/alarm-clock-elapsed.oga" ]]; then
+        notification_sound="$dir/sounds/freedesktop/stereo/alarm-clock-elapsed.oga"
+        break
+    fi
+done
 
-if [[ $sound == "pro" ]]; then
-    notification_sound="$notification_dir/Future-ringtone.mp3"
-elif [[ $sound == "melody" ]]; then
-    notification_sound="$notification_dir/Eerie-clock-chimes-sound.mp3"
-fi
-
-
-termdown "$time" -T "$title"  && mpg123 -q "$notification_sound"
+termdown "$time" -T "$title" && {
+    if [[ -n "$notification_sound" && -f "$notification_sound" ]]; then
+        paplay "$notification_sound" 2>/dev/null || notify-send "Timer finished" "Could not play sound"
+    else
+        notify-send "Timer finished" "No sound file found"
+    fi
+}
