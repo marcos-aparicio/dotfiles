@@ -1,16 +1,48 @@
 #!/bin/bash
 
 TMUXP_REPO="$HOME/dotfiles/tmuxp"
+CACHE_DIR="/tmp/tm_cache"
+mkdir -p "$CACHE_DIR"
+
+# Get cache file path for a config file
+get_cache_file() {
+	local file="$1"
+	local hash=$(echo "$file" | md5sum | cut -d' ' -f1)
+	echo "$CACHE_DIR/$hash"
+}
 
 # Extract session name from a config file
 get_session_name() {
 	yq .session_name "$1" 2>/dev/null
 }
 
+# Get cached session name if file hasn't changed
+get_session_name_cached() {
+	local file="$1"
+	local cache_file=$(get_cache_file "$file")
+	local current_mtime=$(stat -c %Y "$file" 2>/dev/null)
+
+	if [ -f "$cache_file" ]; then
+		local cached_mtime=$(cut -d'|' -f2 "$cache_file" 2>/dev/null)
+		if [ "$current_mtime" = "$cached_mtime" ]; then
+			# Cache hit: file hasn't changed
+			cut -d'|' -f1 "$cache_file"
+			return 0
+		fi
+	fi
+
+	# Cache miss: reparse and store
+	local session=$(get_session_name "$file")
+	if [ -n "$session" ]; then
+		echo "$session|$current_mtime" > "$cache_file"
+		echo "$session"
+	fi
+}
+
 # Format session output (without checking if active - lazy evaluation)
 format_session_line() {
 	local file="$1"
-	local session=$(get_session_name "$file")
+	local session=$(get_session_name_cached "$file")
 
 	if [ -z "$session" ]; then
 		return 1
@@ -20,20 +52,11 @@ format_session_line() {
 	printf "%s\t%s\n" "$session" "$file"
 }
 
-# Check if a session is active and format with marker
-format_with_marker() {
-	local session="$1"
-	local marker=""
-	if tmux has-session -t "$session" 2>/dev/null; then
-		marker=" *"
-	fi
-	echo "$session$marker"
-}
-
 # Export functions for xargs subshells
-export -f get_session_name format_session_line format_with_marker
+export -f get_cache_file get_session_name get_session_name_cached format_session_line
+export CACHE_DIR
 
-# Find all config files and format them (in parallel, no session checks)
+# Find all config files and format them (in parallel, with mtime caching)
 find_sessions() {
 	find "$TMUXP_REPO" -type f \( -name '*.yaml' -o -name '*.yml' \) | xargs -P 8 -I {} bash -c 'format_session_line "$@"' _ {}
 }
