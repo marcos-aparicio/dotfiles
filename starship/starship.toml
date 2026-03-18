@@ -39,7 +39,7 @@ minutes=$(((elapsed % 3600) / 60))
 output=""
 [ $days -gt 0 ] && output+="${days}d"
 [ $hours -gt 0 ] && [ -z "$output" ] && output+="${hours}h" || ([ $hours -gt 0 ] && output+=" ${hours}h")
-[ $minutes -gt 0 ] && [ -z "$output" ] && output+="${minutes}m" || ([ $minutes -gt 0 ] && output+=" ${minutes}m")
+[ $minutes -gt 0 ] && [ -z "$output" ] && output+="${minutes}m" || [ $minutes -gt 0 ] && output+=" ${minutes}m"
 echo "$tags $output"
 '''
 format = '⏱️  $output '
