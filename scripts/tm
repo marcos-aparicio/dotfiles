@@ -7,14 +7,17 @@ get_session_name() {
 	yq .session_name "$1" 2>/dev/null
 }
 
-# Check if a tmux session is currently active
+# Check if a session is active using pre-fetched list (much faster than has-session)
 is_session_active() {
-	tmux has-session -t "$1" 2>/dev/null
+	local session="$1"
+	local active_sessions="$2"
+	echo "$active_sessions" | grep -Fxq "$session"
 }
 
 # Format session output with indicator if active
 format_session_line() {
 	local file="$1"
+	local active_sessions="$2"
 	local session=$(get_session_name "$file")
 
 	if [ -z "$session" ]; then
@@ -22,7 +25,7 @@ format_session_line() {
 	fi
 
 	local marker=""
-	if is_session_active "$session"; then
+	if is_session_active "$session" "$active_sessions"; then
 		marker=" *"
 	fi
 
@@ -35,7 +38,9 @@ export -f get_session_name is_session_active format_session_line
 
 # Find all config files and format them (in parallel)
 find_sessions() {
-	find "$TMUXP_REPO" -type f \( -name '*.yaml' -o -name '*.yml' \) | xargs -P 8 -I {} bash -c 'format_session_line "$@"' _ {}
+	local active_sessions=$(tmux list-sessions -F "#{session_name}" 2>/dev/null)
+	export active_sessions
+	find "$TMUXP_REPO" -type f \( -name '*.yaml' -o -name '*.yml' \) | xargs -P 8 -I {} bash -c 'format_session_line "$@"' _ {} "$active_sessions"
 }
 
 # Main: select a session and load it
