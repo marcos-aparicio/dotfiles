@@ -9,6 +9,7 @@
 
 # identation here is really important otherwise is not gonna work
 - link:
+    ~/.thymerc: thyme/thymerc
     ~/.config/starship: starship
     ~/.config/lf: lf
     ~/.config/ncmpcpp: ncmpcpp
