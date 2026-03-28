@@ -10,11 +10,11 @@ color_break: "bright blue"
 hooks:
   notify:
     events: ["after"]
-    command: "notify-send \"Pomodoro done #{repeat_suffix}\" -title \"thyme\" && paplay $(print -rC1 -- ${(s[:])^XDG_DATA_DIRS}/sounds/freedesktop/stereo/interval-end.oga(ND))"
+    command: "$HOME/.local/scripts/thyme-on-pomodoro-done.sh \"#{repeat_suffix}\""
 
   notify_break:
     events: ["after_break"]
-    command: "notify-send \"Break done #{repeat_suffix}\" -title \"thyme\" && paplay $(print -rC1 -- ${(s[:])^XDG_DATA_DIRS}/sounds/freedesktop/stereo/interval-end.oga(ND))"
+    command: "$HOME/.local/scripts/thyme-on-break-done.sh \"#{repeat_suffix}\""
 
   echo_after_all:
     events: ["after_all"]

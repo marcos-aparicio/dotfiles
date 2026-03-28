@@ -10,6 +10,9 @@ eval "$(zoxide init zsh)"
 # Starship prompt - critical for prompt display
 eval "$(starship init zsh)"
 
+# direnv
+eval "$(direnv hook zsh)"
+
 # ============================================================================
 # COMPLETIONS - defer to background since not needed immediately
 # ============================================================================
@@ -35,12 +38,12 @@ _init_completions &!
 (eval "$(fzf --zsh)" 2>/dev/null &)
 
 # Lazy load pyenv - only initialize when 'pyenv' or 'python' related tools are used
-pyenv_lazy_init() {
-  eval "$(pyenv init - zsh)" 2>/dev/null
-  eval "$(pyenv init --path)" 2>/dev/null
-  unset -f pyenv_lazy_init
-}
-alias pyenv="pyenv_lazy_init && pyenv"
+# pyenv_lazy_init() {
+#   eval "$(pyenv init - zsh)" 2>/dev/null
+#   eval "$(pyenv init --path)" 2>/dev/null
+#   unset -f pyenv_lazy_init
+# }
+# alias pyenv="pyenv_lazy_init && pyenv"
 
 # Lazy load nvm - only when node/npm commands are used
 export NVM_DIR="$([ -z "${XDG_CONFIG_HOME-}" ] && printf %s "${HOME}/.nvm" || printf %s "${XDG_CONFIG_HOME}/nvm")"
@@ -48,10 +51,14 @@ export NVM_DIR="$([ -z "${XDG_CONFIG_HOME-}" ] && printf %s "${HOME}/.nvm" || pr
 nvm_lazy_init() {
   [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
   [ -s "$NVM_DIR/bash_completion" ] && \. "$NVM_DIR/bash_completion"
+  for cmd in node npm yarn npx; do
+    unalias $cmd 2>/dev/null
+  done
   unset -f nvm_lazy_init
 }
 
 # Hook into common node-related commands
-for cmd in node npm yarn npx; do
-  alias $cmd="nvm_lazy_init && $cmd"
-done
+# DISABLED: These aliases interfere with the build system's own Node installation
+# for cmd in node npm yarn npx; do
+#   alias $cmd="nvm_lazy_init && $cmd"
+# done

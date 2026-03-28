@@ -36,3 +36,11 @@ src_module "extra.zsh"
 if [[ -f "$HOME/.config/zsh/.zsh_after" ]]; then
   source "$HOME/.config/zsh/.zsh_after"
 fi
+
+# pnpm
+export PNPM_HOME="/home/marcos/.local/share/pnpm"
+case ":$PATH:" in
+  *":$PNPM_HOME:"*) ;;
+  *) export PATH="$PNPM_HOME:$PATH" ;;
+esac
+# pnpm end

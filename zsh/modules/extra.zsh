@@ -55,9 +55,10 @@ else
 fi
 
 # Lazy load direnv - only on first use
-direnv_lazy_init() {
-  eval "$(direnv hook zsh)"
-  unset -f direnv_lazy_init
-}
-alias direnv="direnv_lazy_init && direnv"
+# DISABLED: direnv can modify environment variables and interfere with builds
+# direnv_lazy_init() {
+#   eval "$(direnv hook zsh)"
+#   unset -f direnv_lazy_init
+# }
+# alias direnv="direnv_lazy_init && direnv"
 
