@@ -1,0 +1,10 @@
+#!/bin/bash
+cache_file="/tmp/tmux_weather.cache"
+cache_age=$(($(date +%s) - $(stat -c %Y "$cache_file" 2>/dev/null || echo 0)))
+
+if [ $cache_age -gt 300 ] || [ ! -f "$cache_file" ]; then
+    temp=$(curl -s "https://wttr.in?format=j1" 2>/dev/null | jq -r ".current_condition[0].temp_C // \"N/A\"" 2>/dev/null)
+    echo "$temp°C" > "$cache_file" 2>/dev/null
+fi
+
+cat "$cache_file" 2>/dev/null || echo "N/A"
