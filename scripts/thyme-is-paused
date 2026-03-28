@@ -1,0 +1,25 @@
+#!/bin/bash
+
+# Check if thyme is paused by checking if ~/.thyme-tmux has been modified
+# Returns 0 if paused, 1 if running
+
+THYME_STATUS="${HOME}/.thyme-tmux"
+
+if [ ! -f "$THYME_STATUS" ]; then
+    echo "inactive"
+    exit 1
+fi
+
+# Get the modification time of the status file
+last_modified=$(stat -c %Y "$THYME_STATUS" 2>/dev/null)
+current_time=$(date +%s)
+time_since_update=$((current_time - last_modified))
+
+# If file hasn't been modified in more than 2 seconds, it's paused
+if [ $time_since_update -gt 2 ]; then
+    echo "paused"
+    exit 0
+else
+    echo "running"
+    exit 1
+fi

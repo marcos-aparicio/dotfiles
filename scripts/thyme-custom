@@ -1,0 +1,20 @@
+#!/bin/bash
+
+THYME_STATUS="${HOME}/.thyme-tmux"
+
+if [ ! -f "$THYME_STATUS" ]; then
+    exit 1
+fi
+
+# Check if paused (not modified in last second)
+last_modified=$(stat -c %Y "$THYME_STATUS" 2>/dev/null)
+current_time=$(date +%s)
+time_since_update=$((current_time - last_modified))
+
+if [ $time_since_update -gt 1 ]; then
+    # Paused - change color to yellow
+    cat "$THYME_STATUS" | sed 's/#\[fg=default\]/#[fg=yellow]/g' | sed 's/:[0-9][0-9]/m/' | sed 's/\]\([0-9]\)/]󰍷 \1/' | sed 's/\]$/\] /'
+else
+    # Running - keep default color
+    cat "$THYME_STATUS" | sed 's/:[0-9][0-9]/m/' | sed 's/\]\([0-9]\)/] \1/' | sed 's/\]$/\] /'
+fi
