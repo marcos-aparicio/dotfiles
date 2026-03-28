@@ -1,0 +1,38 @@
+#!/bin/bash
+
+# Start thyme with custom durations
+# Usage: ths [pomodoro_mins] [break_mins] [repeat_count]
+# Defaults: 25 min pomodoro, 5 min break, 4 repeats
+# Examples: ths, ths 40 5 4, ths 25 5, ths 60 10 2
+
+set -euo pipefail
+
+POMODORO_MINS="${1:-25}"
+BREAK_MINS="${2:-5}"
+REPEAT_COUNT="${3:-4}"
+
+# Validate arguments are numbers
+for arg in "$POMODORO_MINS" "$BREAK_MINS" "$REPEAT_COUNT"; do
+  if ! [[ "$arg" =~ ^[0-9]+$ ]]; then
+    echo "Error: Arguments must be positive integers"
+    exit 1
+  fi
+done
+
+# Convert minutes to seconds
+POMODORO_SECS=$((POMODORO_MINS * 60))
+BREAK_SECS=$((BREAK_MINS * 60))
+
+# Backup original config
+CONFIG_FILE="$HOME/.thymerc"
+BACKUP_FILE="${CONFIG_FILE}.bak"
+cp "$CONFIG_FILE" "$BACKUP_FILE"
+trap "mv '$BACKUP_FILE' '$CONFIG_FILE'" EXIT
+
+# Update config values
+sed -i "s/^timer:.*/timer: $POMODORO_SECS/" "$CONFIG_FILE"
+sed -i "s/^timer_break:.*/timer_break: $BREAK_SECS/" "$CONFIG_FILE"
+sed -i "s/^repeat:.*/repeat: $REPEAT_COUNT/" "$CONFIG_FILE"
+
+# Start thyme
+thyme
