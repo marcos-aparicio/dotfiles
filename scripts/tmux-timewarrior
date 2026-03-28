@@ -1,0 +1,36 @@
+#!/bin/bash
+
+cache_file="/tmp/tmux_timewarrior.cache"
+cache_age=$(($(date +%s) - $(stat -c %Y "$cache_file" 2>/dev/null || echo 0)))
+
+# Update cache every 60 seconds
+if [ $cache_age -gt 60 ] || [ ! -f "$cache_file" ]; then
+    # Get the current active task from timewarrior
+    current=$(timew export | jq -r '.[] | select(.end == null) | .tags[0] // "no-tag"' 2>/dev/null | head -1)
+    
+    if [ -z "$current" ] || [ "$current" = "no-tag" ]; then
+        echo "idle" > "$cache_file"
+    else
+        # Get elapsed time in h:m:s format from timew summary
+        elapsed=$(timew summary | grep -oP '(?<=-\s)\d+:\d+:\d+' | head -1)
+        if [ -z "$elapsed" ]; then
+            echo "$current" > "$cache_file"
+        else
+            # Parse h:m:s and convert to short format
+            IFS=':' read -r hours minutes seconds <<< "$elapsed"
+            hours=${hours#0}  # Remove leading zero
+            minutes=${minutes#0}
+            
+            # Format as 2h3m (omit seconds)
+            if [ "$hours" -gt 0 ]; then
+                formatted="${hours}h${minutes}m"
+            else
+                formatted="${minutes}m"
+            fi
+            
+            echo "$current ($formatted)" > "$cache_file"
+        fi
+    fi
+fi
+
+cat "$cache_file" 2>/dev/null || echo "idle"
