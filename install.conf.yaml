@@ -11,6 +11,7 @@
 - link:
     ~/.thymerc: thyme/thymerc
     ~/.config/starship: starship
+    ~/.config/gh-dash: gh-dash
     ~/.config/lf: lf
     ~/.config/ncmpcpp: ncmpcpp
     ~/.config/fzf-mount: fzf-mount
