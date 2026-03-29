@@ -9,15 +9,6 @@ alias gps="git push"
 alias gpl="git pull"
 alias gck="git checkout "
 
-# CALCURSE ALIASES
-alias today="calcurse -a"
-alias tomorrow="calcurse -d tomorrow"
-alias yesterday="calcurse -d yesterday"
-alias tod="calcurse -a"
-alias tom="calcurse -d tomorrow"
-alias week="calcurse -d 7"
-alias days="calcurse -d "
-
 # TASKWARRIOR ALIASES
 if [[ $(command -v task) ]]; then
   alias t="task"
