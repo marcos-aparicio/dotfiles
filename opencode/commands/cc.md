@@ -1,5 +1,6 @@
 ---
 description: Generate a conventional commit message for staged changes
+model: github-copilot/gpt-4o
 ---
 
 Here are the staged changes in the repository:
@@ -15,4 +16,5 @@ Based on these changes, generate a conventional commit message following the Con
 - No period at the end
 - Optionally include a detailed body separated by a blank line
 
-Only provide the commit message without any additional commentary.
+Only provide the commit message without any additional commentary. if the user asks to commit, commit it
+but without a git add command just the git commit
