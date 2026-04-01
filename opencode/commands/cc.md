@@ -1,6 +1,6 @@
 ---
 description: Generate a conventional commit message for staged changes
-model: github-copilot/gpt-4o
+model: github-copilot/gpt-4.1
 ---
 
 Here are the staged changes in the repository:
