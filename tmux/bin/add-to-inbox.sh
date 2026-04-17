@@ -35,6 +35,6 @@ if [ ! -f "$inbox_path" ]; then
 fi
 
 # Append the new item
-echo "- $input_text" >> "$inbox_path"
+echo "- ($(date +%c)) : $input_text" >> "$inbox_path"
 
 echo "✓ Added to inbox ($repo_name): $input_text"
