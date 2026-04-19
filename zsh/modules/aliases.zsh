@@ -60,7 +60,6 @@ alias screen="xrandr --output HDMI-0 --auto --left-of eDP-1-1"
 alias lockscreen="dm-tool switch-to-greeter"
 alias makegif="giph -f 30 -s -l -c 0.3,0,0.5,0.3 -d 3 $HOME/Videos/gifs/$(date +%s).gif && espeak 'Your GIF file is ready sir'"
 alias lockscreen='dm-tool switch-to-greeter'
-alias weather="curl -s wttr.in/~Hamilton\?format=j1 | bat - --language=json"
 alias j="just --choose"
 alias sail='sh $([ -f sail ] && echo sail || echo vendor/bin/sail)'
 alias lzd="lazydocker"

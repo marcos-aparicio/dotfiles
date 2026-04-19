@@ -95,3 +95,10 @@ to_avif() {
 	done
 	echo "Converted $count images to AVIF"
 }
+weather(){
+  DATA_SOURCE=$( curl -s 'wttr.in/?format=j1' )
+  echo -n "Current: "
+  echo "$DATA_SOURCE" | jq -r '.current_condition[0] | "Feels like: \(.FeelsLikeC)°C, Weather: \(.temp_C)°C"'
+  echo ""
+  echo "$DATA_SOURCE" | jq -r '.weather[] | "\(.date): avg temp \(.avgtempC)°C"'
+}
