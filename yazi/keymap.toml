@@ -4,4 +4,6 @@ append_keymap = [
   { on = [ "M", "r"], run = "shell --block 'fzf-mount mount readonly'", desc = "Mount system (read-only)" },
   { on = [ "M", "u"], run = "shell --block 'fzf-mount unmount'", desc = "Unmount system" },
   { on = [ "M", "t"], run = "shell --block 'fzf-mount toggle-mode'", desc = "Toggle mount mode (ro/rw)" }
+  { on = [ "\"" ], run = "shell --block 'shell --interactive --orphan'", desc = "shell --interactive --orphan" },
+  { on = [ "\\", "v" ], run = "shell --block 'vd $1'", desc = "run visidata on the current file" },
 ]
