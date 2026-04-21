@@ -13,6 +13,7 @@
     ~/.config/starship: starship
     ~/.config/gh-dash: gh-dash
     ~/.config/lf: lf
+    ~/.config/sesh: sesh
     ~/.config/ncmpcpp: ncmpcpp
     ~/.config/fzf-mount: fzf-mount
     ~/.config/filesync: filesync

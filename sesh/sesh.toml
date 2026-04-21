@@ -1,0 +1,25 @@
+#:schema https://github.com/joshmedeski/sesh/raw/main/sesh.schema.json
+
+cache = true
+
+
+[[session]]
+name = "finanzas"
+path = "~/Documents/Areas/Finances"
+startup_command = "nvim README.md main.journal"
+windows = ["s1"]
+
+[[session]]
+name = "personal"
+path = "~/Documents/Areas/Obsidian/personal"
+startup_command = "nvim index.md"
+windows = ["s1"]
+
+
+
+[[window]]
+name = "s1"
+[[window]]
+name = "s2"
+[[window]]
+name = "s3"
