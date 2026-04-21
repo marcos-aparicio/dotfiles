@@ -64,6 +64,7 @@ alias j="just --choose"
 alias sail='sh $([ -f sail ] && echo sail || echo vendor/bin/sail)'
 alias lzd="lazydocker"
 alias st="systemctl-tui"
+alias tvs="tv sesh"
 
 [ -f "$HOME/.local/privbin/prueba.sh" ] && alias prueba="nvim $HOME/.local/privbin/prueba.sh"
 [ -d "$HOME/.local/bin" ] && alias localbin="nvim $HOME/.local"
