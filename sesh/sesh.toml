@@ -6,3 +6,7 @@ import = [
   "~/dotfiles/sesh-sessions/dotfiles.toml",
   "~/dotfiles/sesh-sessions/work.toml"
 ]
+
+[default_session]
+startup_command = "nvim -c ':Telescope find_files'"
+preview_command = "eza --all --git --icons --color=always {}"
