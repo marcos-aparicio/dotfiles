@@ -21,9 +21,12 @@ local config = {
       "#00afff", "#FFEE99", "#95E6CB", "#FFFFFF",
     },
   },
-
   -- Font
-  font = wezterm.font("mononoki Nerd Font"),
+  font = wezterm.font_with_fallback({
+       'mononoki Nerd Font',
+       'FiraCode Nerd Font',
+  }),
+  warn_about_missing_glyphs = false,
   font_size = 18, -- ⬅️ Increased (you can set 15/16 if you want even bigger)
 
   -- Window
