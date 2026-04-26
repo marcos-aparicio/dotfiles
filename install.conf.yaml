@@ -9,6 +9,7 @@
 
 # identation here is really important otherwise is not gonna work
 - link:
+    ~/.agents: agents
     ~/.thymerc: thyme/thymerc
     ~/.config/starship: starship
     ~/.config/gh-dash: gh-dash
