@@ -33,3 +33,5 @@
 
 [diff]
   colorMoved = default
+[pager]
+	diff = diffnav
