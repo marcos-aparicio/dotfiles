@@ -1,0 +1,28 @@
+[metadata]
+name = "workmux"
+description = "A channel to perform operations in workmux"
+requirements = [ "workmux", "jq", "git" ]
+
+[source]
+# command = "workmux list --json | jq -r '.[] | select(.is_main == false) | .handle'"
+command = ["git for-each-ref --format='%(refname:short)' refs/heads/ refs/remotes/","echo 'porque-nada-bro'"]
+
+
+[keybindings]
+enter = "actions:enter"
+ctrl-d = "actions:delete"
+
+[actions.create_branch]
+description = "Creates a branch and opens a workmux worktree there"
+command = "read -p 'Enter branch name: ' branch && workmux add \"$branch\""
+mode = "execute"
+
+[actions.enter]
+description = "Enter workmux worktree and if it doesn't exist it adds it"
+command = "tmux has-session 2>/dev/null || tmux start-server; workmux open '{0}' || workmux add '{0}'"
+mode = "execute"
+
+[actions.delete]
+description = "Delete workmux tree"
+command = "workmux remove -k '{0}'"
+mode = "execute"
