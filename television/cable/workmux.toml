@@ -5,7 +5,7 @@ requirements = [ "workmux", "jq", "git" ]
 
 [source]
 # command = "workmux list --json | jq -r '.[] | select(.is_main == false) | .handle'"
-command = ["git for-each-ref --format='%(refname:short)' refs/heads/ refs/remotes/","echo 'porque-nada-bro'"]
+command = ["git for-each-ref --format='%(refname:short)' refs/heads/ refs/remotes/","workmux list --json | jq -r '.[].handle'"]
 
 
 [keybindings]
@@ -19,7 +19,7 @@ mode = "execute"
 
 [actions.enter]
 description = "Enter workmux worktree and if it doesn't exist it adds it"
-command = "tmux has-session 2>/dev/null || tmux start-server; workmux open '{0}' || workmux add '{0}'"
+command = "workmux open '{0}' || workmux add '{0}'"
 mode = "execute"
 
 [actions.delete]
