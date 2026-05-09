@@ -13,8 +13,34 @@ time_since_update=$((current_time - last_modified))
 
 if [ $time_since_update -gt 1 ]; then
     # Paused - change color to yellow
-    cat "$THYME_STATUS" | sed 's/#\[fg=default\]/#[fg=yellow]/g' | sed 's/:[0-9][0-9]/m/' | sed 's/\]\([0-9]\)/]󰍷 \1/' | sed 's/\]$/\] /'
+    output=$(cat "$THYME_STATUS" | sed 's/#\[fg=default\]/#[fg=yellow]/g')
+
+    # Extract minutes and seconds from the output
+    minutes=$(echo "$output" | grep -oE '[0-9]{1,2}:[0-9]{2}' | cut -d: -f1)
+    seconds=$(echo "$output" | grep -oE '[0-9]{1,2}:[0-9]{2}' | cut -d: -f2)
+
+    # Only show seconds if minutes is 00
+    if [[ "$minutes" =~ ^(00|0)$ ]] ; then
+        time_display="${seconds}s"
+    else
+        time_display="${minutes}m"
+    fi
+
+    echo "󰍷 $time_display "
 else
     # Running - keep default color
-    cat "$THYME_STATUS" | sed 's/:[0-9][0-9]/m/' | sed 's/\]\([0-9]\)/] \1/' | sed 's/\]$/\] /'
+    output=$(cat "$THYME_STATUS")
+
+    # Extract minutes and seconds from the output
+    minutes=$(echo "$output" | grep -oE '[0-9]{1,2}:[0-9]{2}' | cut -d: -f1)
+    seconds=$(echo "$output" | grep -oE '[0-9]{1,2}:[0-9]{2}' | cut -d: -f2)
+
+    # Only show seconds if minutes is 00
+    if [[ "$minutes" =~ ^(00|0)$ ]] ; then
+        time_display="${seconds}s"
+    else
+        time_display="${minutes}m"
+    fi
+
+    echo " $time_display "
 fi
