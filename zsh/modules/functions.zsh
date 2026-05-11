@@ -2,6 +2,21 @@ mkt(){
   mkdir -p {content,exploits,nmap,scripts}
 }
 
+tweek() {
+  tag=$1
+  lastNWeeks=$2
+  for ((i=lastNWeeks-2; i>=0; i--)); do
+    week1=$(date -d "$((i+1)) weeks ago" "+%GW%V")
+    week2=$(date -d "$i weeks ago" "+%GW%V1")
+    echo "$week1"
+    timew recap "$tag" "$week1" - "$week2"
+  done
+  week1=$(date "+%GW%V")
+  week2=$(date -d "1 week" "+%GW%V1")
+  echo "$week1"
+  timew recap "$tag" "$week1" - "$week2"
+}
+
 s(){
   sesh connect "$(
     sesh list --icons | fzf-tmux -p 80%,70% \
