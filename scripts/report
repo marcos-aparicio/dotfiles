@@ -1,0 +1,33 @@
+#!/bin/bash
+RANGE=:week
+
+output_all=$(timew summary $RANGE | tail -n 2 | head -n 1)
+if [[ "$output_all" =~ ^[[:space:]]+([0-9]+):([0-9]{2}):([0-9]{2})$ ]]; then
+  hour_all="${BASH_REMATCH[1]}"
+  minute_all="${BASH_REMATCH[2]}"
+  second_all="${BASH_REMATCH[3]}"
+else
+  hour_all=0
+  minute_all=0
+  second_all=0
+fi
+
+output_frances=$(timew summary $RANGE francais | tail -n 2 | head -n 1)
+if [[ "$output_frances" =~ ^[[:space:]]+([0-9]+):([0-9]{2}):([0-9]{2})$ ]]; then
+  hour_frances="${BASH_REMATCH[1]}"
+  minute_frances="${BASH_REMATCH[2]}"
+  second_frances="${BASH_REMATCH[3]}"
+else
+  hour_frances=0
+  minute_frances=0
+  second_frances=0
+fi
+
+ratio=$(qalc -t "round ((${hour_frances}hours ${minute_frances}minutes ${second_frances}seconds) / (${hour_all}hours ${minute_all}minutes ${second_all}s),2) to %")
+
+echo "Tiempo Total: ${hour_all}h ${minute_all}m ${second_all}s"
+echo "---"
+echo "Tiempo en Frances: ${hour_frances}h ${minute_frances}m ${second_frances}s"
+echo "---"
+echo "Ratio: $ratio"
+
