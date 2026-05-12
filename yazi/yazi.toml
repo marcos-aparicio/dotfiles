@@ -10,6 +10,7 @@ pdf = [
 [plugin]
 prepend_spotters = [
   { url = "*/", run = "spot" },
+  { url = "*", run = "spot-tmsu" },
   { mime = "audio/*", run = "spot-audio" },
   { mime = "video/*", run = "spot-video" },
 ]
