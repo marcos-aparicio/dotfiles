@@ -1,0 +1,4 @@
+[[plugin.deps]]
+use = "AminurAlam/yazi-plugins:spot"
+rev = "8a3b35d"
+hash = "808b8bce8e17aa78b26cda90dd8fbf8d"

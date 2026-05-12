@@ -7,7 +7,9 @@ pdf = [
 	{ run = 'sioyek "$@"', orphan = true, for = "unix" },
 ]
 
-[open]
-prepend_rules = [
-  { name = "*.pdf", use = ["pdf"] }
+[plugin]
+prepend_spotters = [
+  { url = "*/", run = "spot" },
+  { mime = "audio/*", run = "spot-audio" },
+  { mime = "video/*", run = "spot-video" },
 ]
