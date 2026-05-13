@@ -6,4 +6,5 @@ append_keymap = [
   { on = [ "M", "t"], run = "shell --block 'fzf-mount toggle-mode'", desc = "Toggle mount mode (ro/rw)" },
   { on = [ "\"" ], run = "shell --block 'shell --interactive --orphan'", desc = "shell --interactive --" },
   { on = [ "\\", "v" ], run = "shell --block 'vd $1'", desc = "run visidata on the current file" },
+  { on = [ "T", "a" ], run = "plugin tmsu-tag", desc = "Add tags to the current file" },
 ]
