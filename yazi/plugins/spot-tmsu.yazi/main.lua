@@ -4,10 +4,10 @@ function M:spot(job)
   local tags_section = { title = 'TMSU Tags' }
 
   -- Get file path from job
-  local file = job.file.url
+  local file = tostring(job.file.url)
 
   -- Build command with -n never to suppress filename in output
-  local cmd = 'tmsu tags -n never ' .. file .. ' 2>/dev/null'
+  local cmd = 'tmsu tags -n never ' .. string.format("%q", file) .. ' 2>/dev/null'
 
   -- Execute tmsu tags command
   local handle = io.popen(cmd)
