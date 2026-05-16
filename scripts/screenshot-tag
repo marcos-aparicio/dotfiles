@@ -1,0 +1,100 @@
+#!/bin/bash
+
+# Screenshot + tmsu tagging script for AwesomeWM
+# Dependencies: flameshot, tmsu, $EDITOR, vimiv, notify-send
+
+set -e
+
+SCREENSHOTS_DIR="$HOME/Pictures/Screenshots"
+mkdir -p "$SCREENSHOTS_DIR"
+
+# Generate timestamped filename
+TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+SCREENSHOT_FILE="$SCREENSHOTS_DIR/screenshot_$TIMESTAMP.png"
+
+# Take screenshot with flameshot (interactive mode, raw output to stdout)
+# This gives us full control over the filename
+if ! flameshot gui --raw 2>/dev/null > "$SCREENSHOT_FILE"; then
+    notify-send "Screenshot" "Screenshot cancelled"
+    exit 0
+fi
+
+# Check if file was actually created (user might have cancelled)
+if [ ! -f "$SCREENSHOT_FILE" ]; then
+    notify-send "Screenshot" "Screenshot cancelled or failed"
+    exit 0
+fi
+
+# Get existing tags from tmsu for reference
+EXISTING_TAGS=$(tmsu tags 2>/dev/null | sort)
+
+# Create temp file for tag input
+TAGS_FILE=$(mktemp --suffix=.txt)
+
+# Write existing tags as comments for reference
+{
+    echo "# Available tags:"
+    echo "$EXISTING_TAGS" | sed 's/^/# /'
+    echo ""
+    echo "# Enter tags below (one per line, format: tag or tag=value)"
+    echo "# Save and close to apply tags"
+} > "$TAGS_FILE"
+
+# Open editor in a new wezterm window
+# Use a wrapper that removes the lock file when editor closes
+LOCK_FILE="${TAGS_FILE}.lock"
+touch "$LOCK_FILE"
+
+wezterm start -- bash -c "$EDITOR '$TAGS_FILE'; rm '$LOCK_FILE'" &
+
+# Open vimiv with the screenshot
+vimiv "$SCREENSHOT_FILE" &
+
+# Wait for lock file to be removed (editor to close)
+while [ -f "$LOCK_FILE" ]; do
+    sleep 0.5
+done
+
+# Parse tags from the edited file
+TAGS_ARRAY=()
+while IFS= read -r line; do
+    # Skip empty lines and comments
+    [[ -z "$line" || "$line" =~ ^# ]] && continue
+    # Remove trailing and leading whitespace
+    line="${line#"${line%%[![:space:]]*}"}"  # Remove leading whitespace
+    line="${line%"${line##*[![:space:]]}"}"  # Remove trailing whitespace
+
+    # Split line by spaces to support multiple tags per line
+    read -ra line_tags <<< "$line"
+    for tag in "${line_tags[@]}"; do
+        [ -n "$tag" ] && TAGS_ARRAY+=("$tag")
+    done
+done < "$TAGS_FILE"
+
+# Debug: show what we parsed
+for i in "${!TAGS_ARRAY[@]}"; do
+    echo "DEBUG: TAGS_ARRAY[$i]='${TAGS_ARRAY[$i]}'" >> /tmp/screenshot-debug.log
+done
+
+# Clean up temp file
+rm -f "$TAGS_FILE"
+
+# Apply tags if any were entered
+if [ ${#TAGS_ARRAY[@]} -eq 0 ]; then
+    notify-send "Screenshot" "No tags applied to $(basename $SCREENSHOT_FILE)"
+else
+    # Apply tags with tmsu (each tag separately)
+    for tag in "${TAGS_ARRAY[@]}"; do
+        tmsu tag "$SCREENSHOT_FILE" -- "$tag"
+    done
+
+    # Show confirmation notification
+    TAGS_STRING=""
+    for tag in "${TAGS_ARRAY[@]}"; do
+        [ -n "$TAGS_STRING" ] && TAGS_STRING+=", "
+        TAGS_STRING+="$tag"
+    done
+    notify-send "Screenshot" "Tagged: $TAGS_STRING" -i "$SCREENSHOT_FILE"
+fi
+
+echo "Screenshot saved: $SCREENSHOT_FILE"
