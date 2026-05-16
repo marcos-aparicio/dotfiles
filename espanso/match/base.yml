@@ -46,9 +46,9 @@ matches:
         params:
           cmd: "echo 'Hello from your shell'"
 
-  - trigger: "::<"
+  - trigger: "<<"
     replace: "«"
-  - trigger: "::>"
+  - trigger: ">>"
     replace: "»"
   - trigger: "`e`"
     replace: "è"
