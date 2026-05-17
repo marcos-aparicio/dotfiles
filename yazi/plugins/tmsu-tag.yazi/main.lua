@@ -189,13 +189,14 @@ local function edit_tags_action(file_path)
 
   -- Remove all existing tags
   if not current_tags or current_tags ~= "" then
-    local status_untag, error_untag = Command("tmsu")
+    local child = Command("tmsu")
         :arg({ "untag", "-a", file_path })
-        :status()
+        :stdout(Command.NULL)
+        :stderr(Command.NULL)
+        :spawn()
 
-    if (status_untag and not status_untag.success) or error_untag then
-      ya.notify({ title = "tmsu-tag", content = "Error untagging file", timeout = 2 })
-      return
+    if child then
+      child:wait()
     end
   end
 
@@ -207,15 +208,16 @@ local function edit_tags_action(file_path)
   end
 
   -- Add new tags
-  local status_tag, error_tag = Command("tmsu")
-      :arg({ "tag", file_path, table.unpack(parse_tags_multiline(new_tags)) })
+  local parsed = parse_tags_multiline(new_tags)
+
+  local child2 = Command("tmsu")
+      :arg({ "tag", file_path, table.unpack(parsed) })
       :stdout(Command.NULL)
       :stderr(Command.NULL)
-      :status()
+      :spawn()
 
-  if (status_tag and not status_tag.success) or error_tag then
-    ya.notify({ title = "tmsu-tag", content = "Error re tagging file", timeout = 2 })
-    return
+  if child2 then
+    child2:wait()
   end
 
   set_tags_cache(file_path, true)
