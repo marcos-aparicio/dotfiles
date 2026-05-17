@@ -1,10 +1,37 @@
--- Only return the 'url' userdata, which is Sendable
+local M = {}
+
+-- State management using ya.sync
+local get_tags_cache = ya.sync(function(state)
+  state.tags_cache = state.tags_cache or {}
+  return state.tags_cache
+end)
+
+local set_tags_cache = ya.sync(function(state, file_path, has_tags)
+  state.tags_cache = state.tags_cache or {}
+  if has_tags == nil then
+    state.tags_cache[file_path] = nil  -- Clear cache entry
+  else
+    state.tags_cache[file_path] = has_tags
+  end
+end)
+
+local clear_tags_cache = ya.sync(function(state)
+  state.tags_cache = {}
+end)
+
+local render = ya.sync(function()
+  (ui.render or ya.render)()
+end)
+
+local TAG_ICON = "󰚋"  -- tag icon (nerd font)
+
+-- Get hovered file URL
 local get_hovered_url = ya.sync(function()
   local h = cx.active.current.hovered
   return h and h.url or nil
 end)
 
-
+-- Parse tags from one-line input (handles quoted tags with spaces and key=value pairs)
 local function parse_tags_oneline(input)
   local tags = {}
   local pos = 1
@@ -48,6 +75,7 @@ local function parse_tags_oneline(input)
   return tags
 end
 
+-- Parse tags from multi-line input
 local function parse_tags_multiline(input)
   local tags = {}
   for line in input:gmatch("[^\r\n]+") do
@@ -56,6 +84,7 @@ local function parse_tags_multiline(input)
   return tags
 end
 
+-- Read file contents using Yazi API
 local function read_file(url)
   local fd, err = fs.access():read(true):open(url)
   if not fd then
@@ -78,8 +107,7 @@ local function read_file(url)
   return content
 end
 
-local M = {}
-
+-- Get current tags for a file
 local function get_current_tags(file_path)
   local output, err = Command("tmsu")
       :arg({ "tags", "-n", "never", file_path })
@@ -92,12 +120,11 @@ local function get_current_tags(file_path)
   return output.stdout
 end
 
+-- Edit tags action (opens editor)
 local function edit_tags_action(file_path)
-  -- Get current tags
   local current_tags = get_current_tags(file_path)
 
   -- Create temp file
-  -- Cross-platform: use TMPDIR/TEMP/TMP env vars
   local tmp_dir = Url(os.getenv("TMPDIR") or os.getenv("TEMP") or os.getenv("TMP") or "/tmp")
   local tmp_url = fs.unique("file", tmp_dir:join(".tmp_myfile"))
   if not tmp_url then
@@ -109,7 +136,7 @@ local function edit_tags_action(file_path)
   -- Hide yazi UI before spawning editor
   local permit = ui.hide()
 
-  -- Open in editor using Command API
+  -- Open in editor
   local editor = os.getenv("EDITOR") or "vim"
   local child, err = Command(editor)
       :arg(tostring(tmp_url))
@@ -127,8 +154,6 @@ local function edit_tags_action(file_path)
 
   -- Wait for editor to close
   local output, err = child:wait_with_output()
-
-  -- Restore yazi UI
   permit:drop()
 
   if not output then
@@ -144,10 +169,7 @@ local function edit_tags_action(file_path)
     fs.remove("file", tmp_url)
     return
   end
-  -- Clean up temp file
   fs.remove("file", tmp_url)
-
-  -- Rest of your existing logic...
 
   if new_tags == current_tags then
     ya.notify({ title = "tmsu-tag", content = "No changes made", timeout = 3 })
@@ -155,11 +177,8 @@ local function edit_tags_action(file_path)
   end
 
   local confirm_new_tags = ya.confirm {
-    -- Position
     pos = { "center", w = 40, h = 10 },
-    -- Title
-    title = "Test",
-    -- Body
+    title = "Confirm tags",
     body = new_tags,
   }
 
@@ -168,6 +187,7 @@ local function edit_tags_action(file_path)
     return
   end
 
+  -- Remove all existing tags
   if not current_tags or current_tags ~= "" then
     local status_untag, error_untag = Command("tmsu")
         :arg({ "untag", "-a", file_path })
@@ -180,10 +200,13 @@ local function edit_tags_action(file_path)
   end
 
   if not new_tags or new_tags == "" then
+    set_tags_cache(file_path, false)
     ya.notify({ title = "tmsu-tag", content = "Tags deleted", timeout = 2 })
+    render()
     return
   end
 
+  -- Add new tags
   local status_tag, error_tag = Command("tmsu")
       :arg({ "tag", file_path, table.unpack(parse_tags_multiline(new_tags)) })
       :stdout(Command.NULL)
@@ -195,15 +218,17 @@ local function edit_tags_action(file_path)
     return
   end
 
+  set_tags_cache(file_path, true)
   ya.notify({
     title = "tmsu-tag",
     content = string.format("Tags updated:\n%s", new_tags),
     timeout = 3
   })
+  render()
 end
 
+-- Add tags action (simple input prompt)
 local function add_tags_action(file_path)
-  -- Show input prompt for tags
   local tags, event = ya.input({
     title = "Add tags: ",
     value = "",
@@ -214,11 +239,8 @@ local function add_tags_action(file_path)
     return
   end
 
-
   local parsed_tags = parse_tags_oneline(tags)
-  ya.dbg(tags)
-  ya.dbg(table.concat(parsed_tags, ", "))
-  -- Execute tmsu tag command
+
   local child, err = Command("tmsu")
       :arg({ "tag", file_path, table.unpack(parsed_tags) })
       :stdout(Command.NULL)
@@ -244,18 +266,21 @@ local function add_tags_action(file_path)
     return
   end
 
+  set_tags_cache(file_path, true)
   ya.notify({
     title = "tmsu-tag",
     content = string.format("Tagged: %s", tags),
     timeout = 3
   })
+  render()
 end
 
+-- Entry: Called when user invokes the plugin
 function M:entry(job)
   local hovered_url = get_hovered_url()
 
   if not hovered_url then
-    ya.notify({ title = "tmsu-tag", content = "there's no file hovered", timeout = 5 })
+    ya.notify({ title = "tmsu-tag", content = "No file hovered", timeout = 5 })
     return
   end
 
@@ -267,6 +292,57 @@ function M:entry(job)
   else
     add_tags_action(file_path)
   end
+end
+
+-- Fetch: Called by Yazi to load file metadata
+function M:fetch(job)
+  local cache = get_tags_cache()
+
+  for _, file in ipairs(job.files) do
+    local file_path = tostring(file.url)
+
+    -- Skip if already cached
+    if cache[file_path] ~= nil then
+      goto continue
+    end
+
+    -- Query tmsu for this file
+    local output, err = Command("tmsu")
+        :arg({ "tags", "--count", "--name", "never", file_path })
+        :output()
+
+    if output and not err then
+      local count = tonumber(output.stdout:match("%d+"))
+      set_tags_cache(file_path, (count and count > 0) or false)
+    else
+      set_tags_cache(file_path, false)
+    end
+
+    ::continue::
+  end
+
+  render()
+  return true
+end
+
+-- Setup: Register the renderer
+function M:setup()
+  Linemode:children_add(function(_self)
+    -- Skip directories
+    if _self._file.is_dir then
+      return ""
+    end
+
+    local file_path = tostring(_self._file.url)
+    local cache = get_tags_cache()
+    local has_tags = cache[file_path]
+
+    if has_tags == true then
+      return ui.Line(ui.Span(TAG_ICON):style(ui.Style():fg("blue")))
+    end
+
+    return ""
+  end, 500)
 end
 
 return M
