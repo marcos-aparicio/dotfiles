@@ -9,7 +9,7 @@ end)
 local set_tags_cache = ya.sync(function(state, file_path, has_tags)
   state.tags_cache = state.tags_cache or {}
   if has_tags == nil then
-    state.tags_cache[file_path] = nil  -- Clear cache entry
+    state.tags_cache[file_path] = nil -- Clear cache entry
   else
     state.tags_cache[file_path] = has_tags
   end
@@ -23,7 +23,7 @@ local render = ya.sync(function()
   (ui.render or ya.render)()
 end)
 
-local TAG_ICON = "󰚋"  -- tag icon (nerd font)
+local TAG_ICON = "󰚋" -- tag icon (nerd font)
 
 -- Get hovered file URL
 local get_hovered_url = ya.sync(function()
@@ -47,12 +47,12 @@ local function parse_tags_oneline(input)
 
     -- Try patterns in order (most specific first)
     local patterns = {
-      '"[^"]*"="[^"]*"',   -- "key"="value"
-      '[%w]+="[^"]*"',     -- key="value"
-      '"[^"]+"=[%w%s]+',   -- "key"=value
-      '[%w]+=[%w]+',       -- key=value
-      '"[^"]+"',           -- "value"
-      '[%w]+',             -- value
+      '"[^"]*"="[^"]*"', -- "key"="value"
+      '[%w]+="[^"]*"',   -- key="value"
+      '"[^"]+"=[%w%s]+', -- "key"=value
+      '[%w]+=[%w]+',     -- key=value
+      '"[^"]+"',         -- "value"
+      '[%w]+',           -- value
     }
 
     local matched = false
@@ -118,6 +118,18 @@ local function get_current_tags(file_path)
   end
 
   return output.stdout
+end
+
+
+local function copy_tags_to_clipboard_action(file_path)
+  local current_tags = get_current_tags(file_path)
+
+  if not current_tags or current_tags == "" then
+    ya.notify({ title = "tmsu-tag", content = "No tags to copy ", timeout = 3 })
+    return
+  end
+  ya.clipboard(current_tags)
+  ya.notify({ title = "tmsu-tag", content = "Tags copied to clipboard", timeout = 3 })
 end
 
 -- Edit tags action (opens editor)
@@ -291,6 +303,8 @@ function M:entry(job)
   -- Check which action was called
   if job.args[1] == "edit" then
     edit_tags_action(file_path)
+  elseif job.args[1] == "clipboard" then
+    copy_tags_to_clipboard_action(file_path)
   else
     add_tags_action(file_path)
   end

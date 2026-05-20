@@ -8,4 +8,6 @@ append_keymap = [
   { on = [ "\\", "v" ], run = "shell --block 'vd $1'", desc = "run visidata on the current file" },
   { on = [ "T", "a" ], run = "plugin tmsu-tag", desc = "Add tags to the current file" },
   { on = [ "T", "e" ], run = "plugin tmsu-tag -- edit", desc = "Edit tags for the current file" },
+  { on = [ "T", "c" ], run = "plugin tmsu-tag -- clipboard", desc = "Copy tags of the current file to clipboard" },
+
 ]
