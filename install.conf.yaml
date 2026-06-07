@@ -11,6 +11,7 @@
 - link:
     ~/.xsession: xsession/.xsession
     ~/.agents: agents
+    ~/.config/wallust: wallust
     ~/.thymerc: thyme/thymerc
     ~/.config/starship: starship
     ~/.config/gh-dash: gh-dash
