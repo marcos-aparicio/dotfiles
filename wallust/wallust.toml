@@ -48,7 +48,16 @@ palette = "saliencedark"
 # template: A RELATIVE path that points to `~/.config/wallust/template` (depends on platform)
 # target: ABSOLUTE path in which to place a file with generated templated values.
 # ¡ If either one is a directory, then both SHOULD be one. !
-# zathura = { template = 'zathura', target = '~/.config/zathura/zathurarc' }
+wezterm = { template = 'wezterm.lua', target = '~/.config/wezterm/colors.lua' }
+xres = { src = "Xresources", dst = "~/.config/Xresources" }
+pywal = { src = "colors.json", dst = "~/.cache/wal/colors.json"}
+rofi = { src = "rofi.rasi", dst = "~/.config/rofi/colors/wallust.rasi"}
+
+# old times, good times. Here I put old pywal templates.
+
+# NOTE THAT BOTH src AND dst ARE DIRECTORIES!
+
+# pywal = { src = "templates/", dst = '~/.cache/wal/', pywal = true }
 
 [hooks]
 # Run commands when wallust is invoked. Useful to avoid scripting.

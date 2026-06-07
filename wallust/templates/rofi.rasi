@@ -1,0 +1,10 @@
+* {
+    background:     {{background}};
+    background-alt: {{background | lighten(0.1)}};
+    foreground:     {{cursor}};
+    selected:       {{cursor}};
+    active:         {{color0}};
+    urgent:         {{color1}};
+    main:           {{color3}};
+    green:          {{color4}};
+}
