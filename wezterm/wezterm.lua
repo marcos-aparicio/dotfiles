@@ -1,30 +1,13 @@
 local wezterm = require 'wezterm'
+local colors = require("colors")
 
 local config = {
   -- Colors
-  colors = {
-    foreground = "#B3B1AD",
-    background = "#0A0E14",
-    cursor_bg = "#B3B1AD",
-    cursor_border = "#B3B1AD",
-    cursor_fg = "#0A0E14",
-    selection_bg = "#afd7ff",
-    selection_fg = "#000000",
-
-    ansi = {
-      "#01060E", "#EA6C73", "#91B362", "#F9AF4F",
-      "#268bd2", "#FAE994", "#90E1C6", "#C7C7C7",
-    },
-
-    brights = {
-      "#686868", "#F07178", "#C2D94C", "#FFB454",
-      "#00afff", "#FFEE99", "#95E6CB", "#FFFFFF",
-    },
-  },
+  colors = colors,
   -- Font
   font = wezterm.font_with_fallback({
-       'mononoki Nerd Font',
-       'FiraCode Nerd Font',
+    'mononoki Nerd Font',
+    'FiraCode Nerd Font',
   }),
   warn_about_missing_glyphs = false,
   font_size = 18, -- ⬅️ Increased (you can set 15/16 if you want even bigger)
