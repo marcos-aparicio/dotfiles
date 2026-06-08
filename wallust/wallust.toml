@@ -52,6 +52,9 @@ wezterm = { template = 'wezterm.lua', target = '~/.config/wezterm/colors.lua' }
 xres = { src = "Xresources", dst = "~/.config/Xresources" }
 pywal = { src = "colors.json", dst = "~/.cache/wal/colors.json" }
 rofi = { src = "rofi.rasi", dst = "~/.config/rofi/colors/wallust.rasi"}
+yazi_flavor = { src = "yazi/yazi-flavor.toml", dst = "~/.config/yazi/flavors/wallust.yazi/flavor.toml"}
+yazi_xmltheme = { src = "yazi/yazi-tmtheme.xml", dst = "~/.config/yazi/flavors/wallust.yazi/tmtheme.xml"}
+
 neopywal.template = "colors_neopywal.vim"
 neopywal.target = "~/.cache/wal/colors-wal.vim"
 
