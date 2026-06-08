@@ -52,6 +52,8 @@ wezterm = { template = 'wezterm.lua', target = '~/.config/wezterm/colors.lua' }
 xres = { src = "Xresources", dst = "~/.config/Xresources" }
 pywal = { src = "colors.json", dst = "~/.cache/wal/colors.json" }
 rofi = { src = "rofi.rasi", dst = "~/.config/rofi/colors/wallust.rasi"}
+neopywal.template = "colors_neopywal.vim"
+neopywal.target = "~/.cache/wal/colors-wal.vim"
 
 # old times, good times. Here I put old pywal templates.
 
