@@ -61,6 +61,9 @@ neopywal.target = "~/.cache/wal/colors-wal.vim"
 themecord.template = "discord-colors.css"
 themecord.target = '~/.cache/hellwal/discord-colors.css'
 
+gtk.template = 'pywal/_colors.scss'
+gtk.target = '~/.local/share/themes/gtk/scss/gtk-3.0/_colors.scss'
+
 # old times, good times. Here I put old pywal templates.
 
 # NOTE THAT BOTH src AND dst ARE DIRECTORIES!
