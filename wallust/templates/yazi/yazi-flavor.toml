@@ -14,7 +14,6 @@ marker_selected = { fg = "{{ color10 }}", bg = "{{ color10 }}" }
 
 tab_active   = { reversed = true }
 tab_inactive = {}
-tab_width    = 1
 
 count_copied   = { fg = "{{ color1 }}", bg = "{{ color11 }}" }
 count_cut      = { fg = "{{ color1 }}", bg = "{{ color8 }}" }
@@ -111,7 +110,7 @@ rules = [
 	{ mime = "application/{pdf,doc,rtf,vnd.*}", fg = "{{ color13 }}" },
 
 	# Fallback
-	{ name = "*", fg = "{{ color12 }}" },
-	{ name = "*/", fg = "{{ color11 }}" }
+	{ url = "*", fg = "{{ color12 }}" },
+	{ url = "*/", fg = "{{ color11 }}" }
 ]
 
