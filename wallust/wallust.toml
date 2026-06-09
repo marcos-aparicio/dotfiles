@@ -58,6 +58,9 @@ yazi_xmltheme = { src = "yazi/yazi-tmtheme.xml", dst = "~/.config/yazi/flavors/w
 neopywal.template = "colors_neopywal.vim"
 neopywal.target = "~/.cache/wal/colors-wal.vim"
 
+themecord.template = "discord-colors.css"
+themecord.target = '~/.cache/hellwal/discord-colors.css'
+
 # old times, good times. Here I put old pywal templates.
 
 # NOTE THAT BOTH src AND dst ARE DIRECTORIES!
