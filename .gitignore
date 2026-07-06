@@ -2,3 +2,8 @@ zsh/.zsh_after
 yazi/plugins/gvfs.yazi
 tmux/task_repo_name
 /yazi/flavors/wallust.yazi
+
+# Beads / Dolt files (added by bd init)
+.dolt/
+*.db
+.beads-credential-key
