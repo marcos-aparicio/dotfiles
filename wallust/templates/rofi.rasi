@@ -4,7 +4,7 @@
     foreground:     {{cursor}};
     selected:       {{cursor}};
     active:         {{color0}};
-    urgent:         {{color1}};
+    urgent:         {{cursor | complementary}};
     main:           {{color3}};
     green:          {{color4}};
 }
