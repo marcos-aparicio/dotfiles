@@ -5,4 +5,26 @@
     "bash": "ask",
     "webfetch": "ask"
   },
+  "mcp": {
+    "anki-mcp": {
+      "type": "local",
+      "command": [
+        "ankimcp",
+        "--stdio"
+      ],
+      "environment": {
+        "ANKI_CONNECT_URL": "http://localhost:8765"
+      },
+      "enabled": true
+    },
+    "chrome-devtools": {
+      "type": "local",
+      "command": [
+        "npx",
+        "-y",
+        "chrome-devtools-mcp@latest",
+        "--executablePath=/usr/bin/chromium"
+      ]
+    }
+  }
 }
