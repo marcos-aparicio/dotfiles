@@ -1,21 +1,19 @@
 local M = {
   foreground = "#B3B1AD",
   background = "#0A0E14",
-  cursor_bg = "#B3B1AD",
-  cursor_border = "#B3B1AD",
+  cursor_bg = "#E6B450",
+  cursor_border = "#E6B450",
   cursor_fg = "#0A0E14",
-  selection_bg = "#afd7ff",
-  selection_fg = "#000000",
-
+  selection_bg = "#B3B1AD",
+  selection_fg = "#E6B450",
+  scrollbar_thumb = "#E6B450",
+  split = "#E6B450",
   ansi = {
-    "#01060E", "#EA6C73", "#91B362", "#F9AF4F",
-    "#268bd2", "#FAE994", "#90E1C6", "#C7C7C7",
+    "#0A0E14", "#FF3333", "#C2D94C", "#FF8F40", "#59C2FF", "#FFEE99", "#95E6CB", "#B3B1AD"
   },
-
   brights = {
-    "#686868", "#F07178", "#C2D94C", "#FFB454",
-    "#00afff", "#FFEE99", "#95E6CB", "#FFFFFF",
+    "#4D5566", "#FF3333", "#C2D94C", "#FF8F40", "#59C2FF", "#FFEE99", "#95E6CB",
+    "#B3B1AD"
   },
 }
-
 return M
