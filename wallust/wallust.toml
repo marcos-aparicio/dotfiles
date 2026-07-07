@@ -58,6 +58,9 @@ yazi_xmltheme = { src = "yazi/yazi-tmtheme.xml", dst = "~/.config/yazi/flavors/w
 neopywal.template = "colors_neopywal.vim"
 neopywal.target = "~/.cache/wal/colors-wal.vim"
 
+colors_sh.template = "colors.sh"
+colors_sh.target = "~/.cache/wal/colors.sh"
+
 themecord.template = "discord-colors.css"
 themecord.target = '~/.cache/hellwal/discord-colors.css'
 
