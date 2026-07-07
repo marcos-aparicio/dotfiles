@@ -14,8 +14,15 @@ else
 fi
 
 repo="$parent_dir/$repo_name"
-lists_dir="$repo/lists"
-inbox_path="$lists_dir/inbox.md"
+
+# Prefer the GTD-migrated inbox location, falling back to the legacy lists/
+# location for repos that haven't migrated yet (mirrors resolve_inbox_path in
+# nvim's lua/core/plugins/markdown/lists.lua).
+if [ -d "$repo/memory/gtd" ]; then
+    inbox_path="$repo/memory/gtd/inbox.md"
+else
+    inbox_path="$repo/lists/inbox.md"
+fi
 
 # Input text from argument
 input_text="$1"
@@ -25,8 +32,8 @@ if [ -z "$input_text" ]; then
     exit 1
 fi
 
-# Create lists directory if it doesn't exist
-mkdir -p "$lists_dir"
+# Create the inbox's parent directory if it doesn't exist
+mkdir -p "$(dirname "$inbox_path")"
 
 # Create inbox.md if it doesn't exist
 if [ ! -f "$inbox_path" ]; then
