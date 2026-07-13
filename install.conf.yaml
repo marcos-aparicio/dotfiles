@@ -7,8 +7,16 @@
 
 - clean: ['~/.config']
 
+- plugins:
+    - dotbot-age
+
+- decrypt: true
+
 # identation here is really important otherwise is not gonna work
 - link:
+    # encrypted
+    ~/.ssh/config: private/ssh/config
+
     ~/.xsession: xsession/.xsession
     ~/.agents: agents
     ~/.config/wallust: wallust

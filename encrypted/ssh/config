@@ -1,0 +1,21 @@
+Host github.com
+	IdentityFile ~/.ssh/github_id_ed25519
+
+Host {{SSH_VPS_FORGEJO_HOST}}
+  IdentityFile ~/.ssh/normal_forgejo_ed25519
+  Port {{SSH_VPS_FORGEJO_PORT}}
+
+Host {{SSH_VPS_HOST}}
+  User {{SSH_VPS_USER}}
+  Port {{SSH_VPS_PORT}}
+  IdentityFile ~/.ssh/hetzner_ssh_key
+
+Host {{SSH_VPS_SFTPGO_HOST}}
+  User {{SSH_VPS_SFTPGO_USER}}
+  Port {{SSH_VPS_SFTPGO_PORT}}
+  IdentityFile ~/.ssh/backup_user_sftpgo_edd25519
+
+Host workgejo
+  HostName {{SSH_VPS_FORGEJO_HOST}}
+  IdentityFile ~/.ssh/work_forgejo_account_ed25519
+  Port {{SSH_VPS_FORGEJO_PORT}}
