@@ -12,6 +12,24 @@ issuesSections:
       filters: is:open assignee:@me
     - title: Involved
       filters: is:open involves:@me -author:@me
+notificationsSections:
+  - title: All
+    filters: ""
+  - title: Created
+    filters: reason:author
+  - title: Participating
+    filters: reason:participating
+  - title: Mentioned
+    filters: reason:mention
+  - title: Review Requested
+    filters: reason:review-requested
+  - title: Assigned
+    filters: reason:assign
+  - title: Subscribed
+    filters: reason:subscribed
+  - title: Team Mentioned
+    filters: reason:team-mention
+
 repo:
     branchesRefetchIntervalSeconds: 30
     prsRefetchIntervalSeconds: 60
