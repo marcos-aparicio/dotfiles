@@ -58,7 +58,13 @@ defaults:
                 width: 20
                 hidden: true
     refetchIntervalMinutes: 30
-keybindings: {}
+keybindings:
+  prs:
+    - key: T
+      command: >-
+        tmux new-window '
+          gh enhance -R {{.RepoName}} {{.PrNumber}}
+        '
 repoPaths: {}
 theme:
     ui:
