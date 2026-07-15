@@ -84,6 +84,11 @@ keybindings:
         tmux new-window '
           gh enhance -R {{.RepoName}} {{.PrNumber}}
         '
+    - key: O
+      name: open workmux branch for that pr
+      command: >-
+        workmux open '{{.HeadRefName}}' || workmux add '{{.HeadRefName}}'
+
 repoPaths: {}
 theme:
     ui:
