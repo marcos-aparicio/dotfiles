@@ -79,6 +79,7 @@ defaults:
 keybindings:
   prs:
     - key: T
+      name: open enhance in tmux
       command: >-
         tmux new-window '
           gh enhance -R {{.RepoName}} {{.PrNumber}}
