@@ -1,0 +1,4 @@
+filter_class: org.wezfurlong.wezterm
+
+backend: Clipboard
+paste_shortcut: "CTRL+SHIFT+V"
