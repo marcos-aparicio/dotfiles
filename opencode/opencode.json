@@ -19,12 +19,29 @@
     },
     "chrome-devtools": {
       "type": "local",
+      "enabled": true,
       "command": [
         "npx",
         "-y",
         "chrome-devtools-mcp@latest",
-        "--executablePath=/usr/bin/chromium"
+        "--executablePath=/usr/bin/chromium",
+        "--headless"
       ]
+    },
+    "calendar": {
+      "type": "local",
+      "command": [
+        "npx",
+        "caldav-mcp"
+      ],
+      "environment": {
+        "CALDAV_BASE_URL": "{env:CALDAV_BASE_URL}",
+        "CALDAV_USERNAME": "{env:CALDAV_USERNAME}",
+        "CALDAV_PASSWORD": "{env:CALDAV_PASSWORD}"
+      }
     }
-  }
+  },
+  "plugin": [
+    "/home/marcos/.local/share/npm-global/lib/node_modules/@rynfar/meridian/plugin/meridian.ts"
+  ]
 }

@@ -21,3 +21,7 @@
 [submodule "dotbot-age"]
 	path = dotbot-age
 	url = https://github.com/fcatuhe/dotbot-age.git
+[submodule "sesh-sessions"]
+	path = sesh-sessions
+	url = git@forgejo.mcooxen.xyz:mdev/sesh-sessions.git
+  ignore = dirty
