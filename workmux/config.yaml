@@ -1,0 +1,37 @@
+nerdfont: true
+mode: "session"
+merge_keep: false
+agents:
+  cc-work: "claude"
+  cc-personal: "env CLAUDE_CONFIG_DIR=~/.claude-personal claude"
+  cod: "codex --yolo"
+
+agent: cc-work
+
+windows:
+  - name: 1e
+    panes:
+      - command: nvim
+        focus: true
+  - name: 1a
+    panes:
+      - command: <agent>
+
+  - name: 1s
+  - name: 1ss
+  - name: 1sss
+
+# File operations when creating a worktree.
+files:
+  # Files to copy (useful for .env files that need to be unique).
+  copy:
+    - .env
+
+  # Files/directories to symlink (saves disk space, shares caches).
+  # Default: None.
+  # Use "<global>" to inherit from global config.
+  symlink:
+    - .workmux.yaml
+    - node_modules
+    - CLAUDE.local.md
+    - .envrc

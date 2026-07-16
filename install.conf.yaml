@@ -19,6 +19,7 @@
 
     ~/.xsession: xsession/.xsession
     ~/.agents: agents
+    ~/.config/workmux: workmux
     ~/.config/wallust: wallust
     ~/.thymerc: thyme/thymerc
     ~/.config/starship: starship
