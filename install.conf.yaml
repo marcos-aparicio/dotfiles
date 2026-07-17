@@ -28,7 +28,6 @@
     ~/.config/sesh: sesh
     ~/.config/ncmpcpp: ncmpcpp
     ~/.config/fzf-mount: fzf-mount
-    ~/.config/filesync: filesync
     ~/.config/yazi: yazi
     ~/.config/television: television
     ~/.config/lazygit: lazygit
