@@ -24,6 +24,14 @@ matches:
         type: date
         params:
           format: "%Y-%m-%d"
+  - trigger: "::ayer"
+    replace: "{{ayer}}"
+    vars:
+      - name: ayer
+        type: date
+        params:
+          format: "%Y-%m-%d"
+          offset: -86400
   - trigger: ":now"
     replace: "{{mydate}}"
     vars:
