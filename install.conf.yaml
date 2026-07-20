@@ -17,6 +17,7 @@
     # encrypted
     ~/.ssh/config: private/ssh/config
 
+    ~/.config/visidata: visidata
     ~/.xsession: xsession/.xsession
     ~/.agents: agents
     ~/.config/workmux: workmux
