@@ -73,3 +73,5 @@ alias tvs="tv sesh"
 if [[ $(command -v boxxy) ]]; then
   alias ollama="boxxy ollama"
 fi
+
+alias dt='devtitle'

@@ -1,0 +1,96 @@
+#!/usr/bin/env bash
+# devtitle - run a dev server and rename the tmux window to <label>-<port>
+#
+# Usage:
+#   devtitle npm run start          # names window "vite-<port>"
+#   devtitle -n web npm run dev     # names window "web-<port>"
+#   DEVTITLE_LABEL=api devtitle bun dev
+#
+# How it works: the command runs normally, fully attached to your terminal
+# (colors + interactive shortcuts like Vite's `r`/`q` keep working). A tiny
+# background watcher asks the kernel (`ss`) which TCP port THIS command's
+# process tree opens, then renames the tmux window. It only ever looks at its
+# own descendants, so many projects in many windows each name themselves.
+
+set -uo pipefail
+
+label="${DEVTITLE_LABEL:-vite}"
+if [[ "${1:-}" == "-n" ]]; then
+  label="$2"; shift 2
+fi
+
+if [[ $# -eq 0 ]]; then
+  echo "usage: devtitle [-n label] <command...>" >&2
+  exit 2
+fi
+
+in_tmux=0
+[[ -n "${TMUX:-}" ]] && in_tmux=1
+
+orig_name=""
+if (( in_tmux )); then
+  orig_name=$(tmux display-message -p '#W' 2>/dev/null)
+fi
+
+set_title() {
+  local t="$1"
+  if (( in_tmux )); then
+    tmux rename-window -- "$t" 2>/dev/null
+  else
+    printf '\033]2;%s\033\\' "$t"   # OSC 2 fallback for a plain terminal tab
+  fi
+}
+
+# All PIDs in the process tree rooted at $1 (self + descendants).
+tree_pids() {
+  local queue=("$1") all=() p k
+  while ((${#queue[@]})); do
+    p=${queue[0]}; queue=("${queue[@]:1}")
+    all+=("$p")
+    for k in $(pgrep -P "$p" 2>/dev/null); do queue+=("$k"); done
+  done
+  printf ' %s ' "${all[@]}"
+}
+
+# First listening TCP port owned by a PID in the given " pid pid " set.
+listening_port() {
+  local pidset="$1" line laddr port pid
+  while IFS= read -r line; do
+    [[ -z "$line" ]] && continue
+    laddr=$(awk '{print $4}' <<<"$line")   # e.g. 127.0.0.1:5173, *:5173, [::]:5173
+    port=${laddr##*:}
+    [[ "$port" =~ ^[0-9]+$ ]] || continue
+    for pid in $(grep -oE 'pid=[0-9]+' <<<"$line" | grep -oE '[0-9]+'); do
+      if [[ "$pidset" == *" $pid "* ]]; then
+        echo "$port"; return 0
+      fi
+    done
+  done < <(ss -tlnpH 2>/dev/null)
+  return 1
+}
+
+watcher() {
+  local root="$1" i port pidset
+  for ((i = 0; i < 600; i++)); do   # ~120s at 0.2s
+    pidset=$(tree_pids "$root")
+    if port=$(listening_port "$pidset"); then
+      set_title "${label}-${port}"
+      return 0
+    fi
+    sleep 0.2
+  done
+}
+
+# Watch this shell's process tree; the command below becomes a descendant.
+watcher "$$" &
+watcher_pid=$!
+
+cleanup() {
+  kill "$watcher_pid" 2>/dev/null
+  if (( in_tmux )) && [[ -n "$orig_name" ]]; then
+    tmux rename-window -- "$orig_name" 2>/dev/null
+  fi
+}
+trap cleanup EXIT INT TERM
+
+"$@"
