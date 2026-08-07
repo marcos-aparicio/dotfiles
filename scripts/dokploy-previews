@@ -6,7 +6,9 @@
 #   dokploy-previews list [<remote>]   tab separated rows, one per preview deployment:
 #                                        display <TAB> preview-url <TAB> pr-url <TAB> id
 #                                        <TAB> branch <TAB> pr-number
+#                                        <TAB> dashboard-url
 #   dokploy-previews preview <id>      detail view for the tv preview panel
+#   dokploy-previews logs <id>         page the build log of the latest deployment
 #   dokploy-previews auth              resolve the credentials and exit; run this
 #                                      before tv so any gpg/pass prompt happens
 #                                      in a plain terminal rather than under a TUI
@@ -168,13 +170,21 @@ cmd_list() {
     exit 0
   }
 
-  # applicationId -> "<project>/<application>", used only for the display column
-  apps=$(printf '%s' "$projects" | jq -c '
+  # applicationId -> { label, dashboard }. The dashboard route mirrors the Next.js
+  # page tree: /dashboard/project/<id>/environment/<id>/services/application/<id>,
+  # and the app page selects a pane from ?tab= (general, logs, deployments,
+  # preview-deployments, …).
+  apps=$(printf '%s' "$projects" | jq -c --arg base "$DOKPLOY_URL" '
     [ .[]? as $p
-      | ($p.environments // [])[]
-      | ($p.name) as $pn
-      | (.applications // [])[]
-      | { key: .applicationId, value: ($pn + "/" + .name) }
+      | ($p.environments // [])[] as $e
+      | ($e.applications // [])[]
+      | { key: .applicationId,
+          value: {
+            label: ($p.name + "/" + .name),
+            dashboard: ($base + "/dashboard/project/" + $p.projectId
+                        + "/environment/" + $e.environmentId
+                        + "/services/application/" + .applicationId)
+          } }
     ] | from_entries')
 
   ids=$(printf '%s' "$apps" | jq -r 'keys[]?')
@@ -197,7 +207,8 @@ cmd_list() {
     ("/" + ($owner | ascii_downcase) + "/" + ($repo | ascii_downcase) + "/") as $needle
     | [ add[]?
         | select(((.pullRequestURL // "") | ascii_downcase) | contains($needle))
-        | . + { appLabel: ($apps[.applicationId] // "?") }
+        | ($apps[.applicationId] // {}) as $a
+        | . + { appLabel: ($a.label // "?"), dashboard: ($a.dashboard // "") }
       ]
     | sort_by(.createdAt) | reverse')
   [ -n "$merged" ] || merged="[]"
@@ -230,7 +241,8 @@ cmd_list() {
         (.pullRequestURL // ""),
         .previewDeploymentId,
         (.branch // ""),
-        (.pullRequestNumber // "")
+        (.pullRequestNumber // ""),
+        (if .dashboard == "" then "" else .dashboard + "?tab=preview-deployments" end)
       ] | @tsv'
 }
 
@@ -301,6 +313,41 @@ cmd_auth() {
   api project.all >/dev/null 2>&1 || die "cannot reach $DOKPLOY_URL — check the url and key"
 }
 
+# Build log of this preview's most recent deployment. Dokploy's UI shows these
+# in a modal, so there is no url to link to — but deployment.readLogs takes a
+# deploymentId, and the cache written by `list` already carries them.
+cmd_logs() {
+  local id="$1" slug cache dep_id body
+  # Everything goes through the pager, including failures: tv runs this in fork
+  # mode and redraws the moment it exits, so anything printed straight to the
+  # terminal would flash past unread.
+  page() { printf '%s\n' "$1" | ${PAGER:-less -R}; }
+
+  [ -n "$id" ] || { page "No preview deployment selected."; return 0; }
+  slug=$(remote_slug 2>&1) || { page "$slug"; return 0; }
+  cache=$(cache_file "$slug")
+  [ -f "$cache" ] || { page "No cached data yet — reload the channel with ctrl-r."; return 0; }
+
+  dep_id=$(jq -r --arg id "$id" '
+    (map(select(.previewDeploymentId == $id)) | first) // {}
+    | ((.deployments // []) | first | .deploymentId?) // ""' "$cache")
+  [ -n "$dep_id" ] || { page "This preview deployment has no builds yet."; return 0; }
+
+  load_config || { page "$CONFIG_ERR"; return 0; }
+  body=$(api deployment.readLogs "deploymentId=$dep_id&tail=5000") || {
+    page "Could not read logs for deployment $dep_id.
+
+Your Dokploy may predate the deployment.readLogs endpoint, or the
+deployment's log file has been cleaned up."
+    return 0
+  }
+
+  # The procedure returns a bare string, so the body is JSON-encoded text.
+  body=$(printf '%s' "$body" | jq -r 'if type == "string" then . else tojson end')
+  [ -n "$body" ] || body="No log output recorded for this deployment."
+  page "$body"
+}
+
 cmd_open() {
   local url="$1"
   [ -n "$url" ] || die "nothing to open"
@@ -337,12 +384,13 @@ case "${1:-list}" in
 list) cmd_list "${2:-}" ;;
 preview) cmd_preview "${2:-}" ;;
 auth) cmd_auth ;;
+logs) cmd_logs "${2:-}" ;;
 open) cmd_open "${2:-}" ;;
 copy) cmd_copy "${2:-}" ;;
 _fetch-previews)
   load_config || die "$CONFIG_ERR"
   cmd_fetch_previews "$2" "$3"
   ;;
--h | --help | help) sed -n '2,29p' "$SELF" | sed 's/^#\( \|$\)//' ;;
+-h | --help | help) sed -n '2,31p' "$SELF" | sed 's/^#\( \|$\)//' ;;
 *) die "unknown subcommand: $1 (try --help)" ;;
 esac

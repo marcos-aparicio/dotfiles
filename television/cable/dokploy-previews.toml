@@ -2,6 +2,9 @@
 #
 # Entries are tab separated:
 #   display <TAB> preview-url <TAB> pr-url <TAB> id <TAB> branch <TAB> pr-number
+#   <TAB> dashboard-url
+#
+# dashboard and logs are deliberately keyless — reach them with ctrl-x.
 # See `dokploy-previews --help` for the credentials it expects.
 
 [metadata]
@@ -60,3 +63,14 @@ mode = "fork"
 description = "Open (or create) a workmux worktree for this PR"
 command = "workmux add -o --pr '{split:\\t:5}' || workmux add -o '{split:\\t:4}'"
 mode = "execute"
+
+# No keybinding on purpose: both live in the ctrl-x action picker.
+[actions.dashboard]
+description = "Open this app's Dokploy dashboard (preview deployments tab)"
+command = "dokploy-previews open '{split:\\t:6}'"
+mode = "fork"
+
+[actions.logs]
+description = "Page the build log of this preview's latest deployment"
+command = "dokploy-previews logs '{split:\\t:3}'"
+mode = "fork"
