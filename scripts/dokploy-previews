@@ -6,6 +6,9 @@
 #   dokploy-previews list [<remote>]   tab separated rows, one per preview deployment:
 #                                        display <TAB> preview-url <TAB> pr-url <TAB> id
 #   dokploy-previews preview <id>      detail view for the tv preview panel
+#   dokploy-previews auth              resolve the credentials and exit; run this
+#                                      before tv so any gpg/pass prompt happens
+#                                      in a plain terminal rather than under a TUI
 #   dokploy-previews open <url>        open a url in the browser
 #   dokploy-previews copy <text>       copy text to the system clipboard
 #
@@ -69,8 +72,18 @@ resolve() {
 
 load_config() {
   local cfg="${XDG_CONFIG_HOME:-$HOME/.config}/dokploy/env"
+  # Remember what the environment already said: sourcing the config file would
+  # otherwise clobber it, and the environment is documented to outrank the file.
+  local env_url="${DOKPLOY_URL:-}" env_key="${DOKPLOY_API_KEY:-}"
+  local env_url_cmd="${DOKPLOY_URL_CMD:-}" env_key_cmd="${DOKPLOY_API_KEY_CMD:-}"
+
   # shellcheck disable=SC1090
   [ -f "$cfg" ] && . "$cfg"
+
+  [ -n "$env_url" ] && DOKPLOY_URL="$env_url"
+  [ -n "$env_key" ] && DOKPLOY_API_KEY="$env_key"
+  [ -n "$env_url_cmd" ] && DOKPLOY_URL_CMD="$env_url_cmd"
+  [ -n "$env_key_cmd" ] && DOKPLOY_API_KEY_CMD="$env_key_cmd"
 
   DOKPLOY_URL=$(resolve DOKPLOY_URL personal/dokploy/url)
   if [ -z "$DOKPLOY_URL" ]; then
@@ -270,6 +283,15 @@ cmd_preview() {
       end' "$cache"
 }
 
+# Resolve the credentials and throw them away. The point is the side effect:
+# if the secret lives behind gpg/pass/1password, its prompt happens HERE, in a
+# plain terminal, instead of inside tv — a full-screen TUI owns stdin, so a
+# pinentry spawned underneath it can draw but never receives a keystroke.
+cmd_auth() {
+  load_config || die "$CONFIG_ERR"
+  api project.all >/dev/null 2>&1 || die "cannot reach $DOKPLOY_URL — check the url and key"
+}
+
 cmd_open() {
   local url="$1"
   [ -n "$url" ] || die "nothing to open"
@@ -305,12 +327,13 @@ cmd_copy() {
 case "${1:-list}" in
 list) cmd_list "${2:-}" ;;
 preview) cmd_preview "${2:-}" ;;
+auth) cmd_auth ;;
 open) cmd_open "${2:-}" ;;
 copy) cmd_copy "${2:-}" ;;
 _fetch-previews)
   load_config || die "$CONFIG_ERR"
   cmd_fetch_previews "$2" "$3"
   ;;
--h | --help | help) sed -n '2,25p' "$SELF" | sed 's/^#\( \|$\)//' ;;
+-h | --help | help) sed -n '2,28p' "$SELF" | sed 's/^#\( \|$\)//' ;;
 *) die "unknown subcommand: $1 (try --help)" ;;
 esac

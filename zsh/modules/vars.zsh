@@ -44,7 +44,6 @@ export HISTCONTROL=ignoredups
 export JIRA_AUTH_TYPE="basic"
 export WORDLISTS=$XDG_DATA_HOME/wordlists
 
-export BROWSER=zen-browser
 export MANPAGER="nvim +Man!"
 export DOTNET_CLI_TELEMETRY_OPTOUT=1
 
@@ -53,3 +52,16 @@ if [[ "$XDG_SESSION_TYPE" == "wayland" ]]; then
 else
   export ZSH_SYSTEM_CLIPBOARD_METHOD=xsc
 fi
+
+# GPG must know which terminal to draw pinentry on, and the agent caches that
+# at startup — so it needs refreshing per shell, otherwise a pinentry fired
+# from a reattached tmux pane renders on a terminal that no longer exists.
+if [[ -t 0 ]]; then
+  GPG_TTY=$(tty) && export GPG_TTY
+  command -v gpg-connect-agent >/dev/null 2>&1 &&
+    gpg-connect-agent updatestartuptty /bye >/dev/null 2>&1
+fi
+
+# bun
+export BUN_INSTALL="$HOME/.bun"
+export PATH="$BUN_INSTALL/bin:$PATH"
