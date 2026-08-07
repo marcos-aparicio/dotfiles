@@ -1,0 +1,49 @@
+# Dokploy preview deployments for the repo in the current directory.
+#
+# Entries are tab separated: display <TAB> preview-url <TAB> pr-url <TAB> id
+# See `dokploy-previews --help` for the credentials it expects.
+
+[metadata]
+name = "dokploy-previews"
+description = "Preview deployments on Dokploy for the current repo's git remote"
+requirements = ["dokploy-previews", "git", "jq", "curl"]
+
+[source]
+command = "dokploy-previews list"
+display = "{split:\\t:0}"
+output = "{split:\\t:1}"
+
+[ui]
+layout = "portrait"
+
+[ui.preview_panel]
+size = 55
+
+[preview]
+command = "dokploy-previews preview '{split:\\t:3}'"
+
+[keybindings]
+enter = "actions:open_preview"
+ctrl-g = "actions:open_pr"
+ctrl-y = "actions:copy_preview"
+alt-y = "actions:copy_pr"
+
+[actions.open_preview]
+description = "Open the preview deployment in the browser"
+command = "dokploy-previews open '{split:\\t:1}'"
+mode = "fork"
+
+[actions.open_pr]
+description = "Open the pull request in the browser"
+command = "dokploy-previews open '{split:\\t:2}'"
+mode = "fork"
+
+[actions.copy_preview]
+description = "Copy the preview URL to the clipboard"
+command = "dokploy-previews copy '{split:\\t:1}'"
+mode = "fork"
+
+[actions.copy_pr]
+description = "Copy the pull request URL to the clipboard"
+command = "dokploy-previews copy '{split:\\t:2}'"
+mode = "fork"

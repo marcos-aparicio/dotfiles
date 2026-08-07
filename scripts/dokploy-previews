@@ -1,0 +1,290 @@
+#!/usr/bin/env bash
+# dokploy-previews — Dokploy preview deployments for the repo in the current directory.
+#
+# Backs the `dokploy-previews` television channel, but is usable on its own.
+#
+#   dokploy-previews list [<remote>]   tab separated rows, one per preview deployment:
+#                                        display <TAB> preview-url <TAB> pr-url <TAB> id
+#   dokploy-previews preview <id>      detail view for the tv preview panel
+#   dokploy-previews open <url>        open a url in the browser
+#   dokploy-previews copy <text>       copy text to the system clipboard
+#
+# Configuration — DOKPLOY_URL (e.g. https://dokploy.example.com) and DOKPLOY_API_KEY
+# (Dokploy: Settings > API/CLI). First hit wins:
+#   1. the environment
+#   2. ~/.config/dokploy/env             shell file exporting both
+#   3. pass show personal/dokploy/url    and personal/dokploy/api-key
+#   4. <script dir>/.env                 DOKPLOY_URL=… / DOKPLOY_API_KEY=… lines
+
+set -uo pipefail
+
+SELF="$(readlink -f "${BASH_SOURCE[0]}")"
+SCRIPT_DIR="$(dirname "$SELF")"
+CACHE_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/dokploy-previews"
+CONFIG_ERR=""
+
+die() {
+  printf 'dokploy-previews: %s\n' "$*" >&2
+  exit 1
+}
+
+# A row tv can render when there is nothing to list but something to say.
+row_message() {
+  printf '%s\t\t\t\n' "$1"
+}
+
+from_dotenv() {
+  [ -f "$SCRIPT_DIR/.env" ] || return 0
+  sed -n "s/^$1=//p" "$SCRIPT_DIR/.env" | head -1
+}
+
+load_config() {
+  local cfg="${XDG_CONFIG_HOME:-$HOME/.config}/dokploy/env"
+  # shellcheck disable=SC1090
+  [ -f "$cfg" ] && . "$cfg"
+
+  [ -n "${DOKPLOY_URL:-}" ] || DOKPLOY_URL=$(pass show personal/dokploy/url 2>/dev/null | head -1)
+  [ -n "${DOKPLOY_URL:-}" ] || DOKPLOY_URL=$(from_dotenv DOKPLOY_URL)
+  [ -n "${DOKPLOY_API_KEY:-}" ] || DOKPLOY_API_KEY=$(pass show personal/dokploy/api-key 2>/dev/null | head -1)
+  [ -n "${DOKPLOY_API_KEY:-}" ] || DOKPLOY_API_KEY=$(from_dotenv DOKPLOY_API_KEY)
+
+  if [ -z "${DOKPLOY_URL:-}" ]; then
+    CONFIG_ERR="DOKPLOY_URL is not set — see 'dokploy-previews --help'"
+    return 1
+  fi
+  if [ -z "${DOKPLOY_API_KEY:-}" ]; then
+    CONFIG_ERR="DOKPLOY_API_KEY is not set — see 'dokploy-previews --help'"
+    return 1
+  fi
+
+  DOKPLOY_URL="${DOKPLOY_URL%/}"
+  export DOKPLOY_URL DOKPLOY_API_KEY
+}
+
+# api <procedure> [query-string] — Dokploy exposes its tRPC queries as GET /api/<procedure>
+api() {
+  local path="$1" query="${2:-}"
+  curl -fsS --max-time 20 \
+    -H "x-api-key: $DOKPLOY_API_KEY" \
+    -H "accept: application/json" \
+    "$DOKPLOY_URL/api/$path${query:+?$query}"
+}
+
+# The remote to compare against: the upstream of the current branch, else origin.
+remote_slug() {
+  local remote="${1:-}" branch url
+  git rev-parse --is-inside-work-tree >/dev/null 2>&1 || {
+    echo "not inside a git repository" >&2
+    return 1
+  }
+  if [ -z "$remote" ]; then
+    branch=$(git symbolic-ref --quiet --short HEAD 2>/dev/null)
+    [ -n "$branch" ] && remote=$(git config --get "branch.$branch.remote" 2>/dev/null)
+    [ -n "$remote" ] || remote=origin
+  fi
+  url=$(git remote get-url "$remote" 2>/dev/null) || {
+    echo "no git remote named '$remote'" >&2
+    return 1
+  }
+  # scp-style, ssh:// and https:// all reduce to the trailing <owner>/<repo>
+  printf '%s\n' "$url" |
+    sed -E 's#/+$##; s#\.git$##; s#^.*[:/]([^/:]+)/([^/]+)$#\1/\2#'
+}
+
+cache_file() {
+  printf '%s/%s.json\n' "$CACHE_DIR" "$(printf '%s' "$1" | tr '/' '_')"
+}
+
+# ------------------------------------------------------------------ subcommands
+
+# internal: fetch one application's preview deployments into <dir>/<id>.json
+cmd_fetch_previews() {
+  local dir="$1" app_id="$2"
+  api previewDeployment.all "applicationId=$app_id" >"$dir/$app_id.json" 2>/dev/null || printf '[]' >"$dir/$app_id.json"
+}
+
+cmd_list() {
+  local slug owner repo projects apps ids cache
+  # stderr is folded into the result so failures show up as a row inside tv
+  slug=$(remote_slug "${1:-}" 2>&1) || {
+    row_message "✖ $slug"
+    exit 0
+  }
+  owner="${slug%%/*}"
+  repo="${slug##*/}"
+
+  load_config || {
+    row_message "✖ $CONFIG_ERR"
+    exit 0
+  }
+
+  projects=$(api project.all 2>/dev/null) || {
+    row_message "✖ cannot reach $DOKPLOY_URL — check DOKPLOY_URL / DOKPLOY_API_KEY"
+    exit 0
+  }
+
+  # applicationId -> "<project>/<application>", used only for the display column
+  apps=$(printf '%s' "$projects" | jq -c '
+    [ .[]? as $p
+      | ($p.environments // [])[]
+      | ($p.name) as $pn
+      | (.applications // [])[]
+      | { key: .applicationId, value: ($pn + "/" + .name) }
+    ] | from_entries')
+
+  ids=$(printf '%s' "$apps" | jq -r 'keys[]?')
+  if [ -z "$ids" ]; then
+    row_message "✖ no applications visible with this API key"
+    exit 0
+  fi
+
+  # global, not local: the EXIT trap fires after this function's scope is gone
+  TMPD=$(mktemp -d) || die "mktemp failed"
+  trap 'rm -rf "${TMPD:-}"' EXIT
+  printf '%s\n' "$ids" | xargs -r -P 8 -I {} "$SELF" _fetch-previews "$TMPD" {}
+
+  # Keep the deployments whose pull request lives in this repo. Every forge puts
+  # /<owner>/<repo>/ in the PR url (github /pull/N, gitlab /-/merge_requests/N,
+  # gitea /pulls/N, bitbucket /pull-requests/N), so one substring test covers all.
+  local merged
+  merged=$(cat "$TMPD"/*.json 2>/dev/null | jq -s -c \
+    --argjson apps "$apps" --arg owner "$owner" --arg repo "$repo" '
+    ("/" + ($owner | ascii_downcase) + "/" + ($repo | ascii_downcase) + "/") as $needle
+    | [ add[]?
+        | select(((.pullRequestURL // "") | ascii_downcase) | contains($needle))
+        | . + { appLabel: ($apps[.applicationId] // "?") }
+      ]
+    | sort_by(.createdAt) | reverse')
+  [ -n "$merged" ] || merged="[]"
+
+  mkdir -p "$CACHE_DIR"
+  cache=$(cache_file "$slug")
+  printf '%s' "$merged" >"$cache"
+
+  if [ "$(printf '%s' "$merged" | jq 'length')" = "0" ]; then
+    row_message "○ no preview deployments for $owner/$repo"
+    exit 0
+  fi
+
+  printf '%s' "$merged" | jq -r '
+    def pad($s; $n): $s + (($n - ($s | length)) as $d | if $d > 0 then " " * $d else "" end);
+    def glyph: { done: "✔", running: "◐", error: "✖", idle: "○" }[.] // "•";
+    .[]
+    | (.previewStatus // "idle") as $st
+    | ("#" + (.pullRequestNumber // "?")) as $pr
+    | (.domain
+       | if . == null or (.host // "") == "" then ""
+         else (if .https then "https" else "http" end) + "://" + .host
+              + ((.path // "/") | if . == "/" or . == "" then "" else . end)
+         end) as $url
+    | [ ($st | glyph) + " " + pad($pr; 5) + " " + pad($st; 8) + " "
+        + (.pullRequestTitle // "(no title)")
+        + "  ·  " + (.branch // "?")
+        + "  ·  " + .appLabel,
+        $url,
+        (.pullRequestURL // ""),
+        .previewDeploymentId
+      ] | @tsv'
+}
+
+cmd_preview() {
+  local id="$1" slug cache
+  [ -n "$id" ] || { echo "no selection"; return 0; }
+  slug=$(remote_slug 2>/dev/null) || { echo "not inside a git repository"; return 0; }
+  cache=$(cache_file "$slug")
+  [ -f "$cache" ] || { echo "no cached data — press ctrl-r to reload"; return 0; }
+
+  jq -r --arg id "$id" '
+    def c($n; $s): "[" + $n + "m" + $s + "[0m";
+    def lbl($s): c("36"; $s);
+    def statuscolor: { done: "32", running: "33", error: "31", idle: "90" }[.] // "37";
+    def ago($iso):
+      (($iso // "") | if . == "" then "unknown"
+       else (try (sub("\\.[0-9]+"; "") | sub("Z$"; "Z") | fromdateiso8601) catch null) as $t
+            | if $t == null then $iso
+              else (now - $t) as $d
+                   | ($d | fabs) as $a
+                   | (if $a < 3600 then (($a/60)|floor|tostring) + "m"
+                      elif $a < 86400 then (($a/3600)|floor|tostring) + "h"
+                      else (($a/86400)|floor|tostring) + "d" end) as $span
+                   | if $d < 0 then "in " + $span else $span + " ago" end
+              end
+       end);
+
+    (map(select(.previewDeploymentId == $id)) | first) as $p
+    | if $p == null then "entry is stale — press ctrl-r to reload" else
+      ($p.previewStatus // "idle") as $st
+    | ($p.domain
+       | if . == null or (.host // "") == "" then ""
+         else (if .https then "https" else "http" end) + "://" + .host
+              + ((.path // "/") | if . == "/" or . == "" then "" else . end)
+         end) as $url
+    | [ "  " + c("1"; ($p.pullRequestTitle // "(no title)")),
+        "  " + c("90"; "#" + ($p.pullRequestNumber // "?") + "  ·  " + $p.appLabel),
+        "",
+        "  " + lbl("Status:  ") + c($st | statuscolor; $st),
+        "  " + lbl("Branch:  ") + ($p.branch // "?"),
+        "  " + lbl("Preview: ") + (if $url == "" then c("90"; "no domain assigned") else c("34"; $url) end),
+        "  " + lbl("PR:      ") + c("34"; $p.pullRequestURL // "-"),
+        "  " + lbl("Created: ") + ago($p.createdAt),
+        (if ($p.expiresAt // "") != "" then "  " + lbl("Expires: ") + ago($p.expiresAt) else empty end),
+        "  " + lbl("App:     ") + c("90"; $p.appName // "-"),
+        "",
+        "  " + c("90"; "──────────────────────────────────────────────"),
+        "",
+        "  " + lbl("Deployments"),
+        (($p.deployments // []) | if length == 0 then ["  " + c("90"; "  none yet")]
+          else .[0:10] | to_entries | map(
+            "    " + c(({ done: "32", running: "33", error: "31", idle: "90" }[.value.status] // "37");
+                       ({ done: "✔", running: "◐", error: "✖", idle: "○" }[.value.status] // "•"))
+            + " " + ((.value.title // "deployment") | .[0:52])
+            + "  " + c("90"; ago(.value.createdAt)))
+          end)
+      ] | flatten | join("\n")
+      end' "$cache"
+}
+
+cmd_open() {
+  local url="$1"
+  [ -n "$url" ] || die "nothing to open"
+  if [ -n "${BROWSER:-}" ]; then "$BROWSER" "$url" >/dev/null 2>&1 &
+  elif command -v xdg-open >/dev/null 2>&1; then xdg-open "$url" >/dev/null 2>&1 &
+  elif command -v wslview >/dev/null 2>&1; then wslview "$url" >/dev/null 2>&1 &
+  elif command -v sensible-browser >/dev/null 2>&1; then sensible-browser "$url" >/dev/null 2>&1 &
+  else die "no browser opener found"
+  fi
+  disown 2>/dev/null
+}
+
+cmd_copy() {
+  local text="$1"
+  [ -n "$text" ] || die "nothing to copy"
+  if [ -n "${WAYLAND_DISPLAY:-}" ] && command -v wl-copy >/dev/null 2>&1; then
+    printf '%s' "$text" | wl-copy
+  elif [ -n "${DISPLAY:-}" ] && command -v xclip >/dev/null 2>&1; then
+    printf '%s' "$text" | xclip -selection clipboard
+  elif command -v wl-copy >/dev/null 2>&1; then
+    printf '%s' "$text" | wl-copy
+  elif command -v xclip >/dev/null 2>&1; then
+    printf '%s' "$text" | xclip -selection clipboard
+  elif command -v clip.exe >/dev/null 2>&1; then
+    printf '%s' "$text" | clip.exe
+  else
+    die "no clipboard tool found (wl-copy, xclip or clip.exe)"
+  fi
+  command -v notify-send >/dev/null 2>&1 && notify-send -t 2000 "Copied" "$text" >/dev/null 2>&1
+  return 0
+}
+
+case "${1:-list}" in
+list) cmd_list "${2:-}" ;;
+preview) cmd_preview "${2:-}" ;;
+open) cmd_open "${2:-}" ;;
+copy) cmd_copy "${2:-}" ;;
+_fetch-previews)
+  load_config || die "$CONFIG_ERR"
+  cmd_fetch_previews "$2" "$3"
+  ;;
+-h | --help | help) sed -n '2,17p' "$SELF" | sed 's/^#\( \|$\)//' ;;
+*) die "unknown subcommand: $1 (try --help)" ;;
+esac
