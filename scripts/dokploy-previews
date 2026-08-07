@@ -5,6 +5,7 @@
 #
 #   dokploy-previews list [<remote>]   tab separated rows, one per preview deployment:
 #                                        display <TAB> preview-url <TAB> pr-url <TAB> id
+#                                        <TAB> branch <TAB> pr-number
 #   dokploy-previews preview <id>      detail view for the tv preview panel
 #   dokploy-previews auth              resolve the credentials and exit; run this
 #                                      before tv so any gpg/pass prompt happens
@@ -227,7 +228,9 @@ cmd_list() {
         + "  ·  " + .appLabel,
         $url,
         (.pullRequestURL // ""),
-        .previewDeploymentId
+        .previewDeploymentId,
+        (.branch // ""),
+        (.pullRequestNumber // "")
       ] | @tsv'
 }
 
@@ -340,6 +343,6 @@ _fetch-previews)
   load_config || die "$CONFIG_ERR"
   cmd_fetch_previews "$2" "$3"
   ;;
--h | --help | help) sed -n '2,28p' "$SELF" | sed 's/^#\( \|$\)//' ;;
+-h | --help | help) sed -n '2,29p' "$SELF" | sed 's/^#\( \|$\)//' ;;
 *) die "unknown subcommand: $1 (try --help)" ;;
 esac

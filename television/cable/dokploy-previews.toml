@@ -1,11 +1,14 @@
 # Dokploy preview deployments for the repo in the current directory.
 #
-# Entries are tab separated: display <TAB> preview-url <TAB> pr-url <TAB> id
+# Entries are tab separated:
+#   display <TAB> preview-url <TAB> pr-url <TAB> id <TAB> branch <TAB> pr-number
 # See `dokploy-previews --help` for the credentials it expects.
 
 [metadata]
 name = "dokploy-previews"
 description = "Preview deployments on Dokploy for the current repo's git remote"
+# workmux is deliberately not listed: it backs one optional action, and a hard
+# requirement would make the whole channel unavailable without it.
 requirements = ["dokploy-previews", "git", "jq", "curl"]
 
 [source]
@@ -27,6 +30,7 @@ enter = "actions:open_preview"
 ctrl-g = "actions:open_pr"
 ctrl-y = "actions:copy_preview"
 alt-y = "actions:copy_pr"
+alt-w = "actions:workmux"
 
 [actions.open_preview]
 description = "Open the preview deployment in the browser"
@@ -47,3 +51,12 @@ mode = "fork"
 description = "Copy the pull request URL to the clipboard"
 command = "dokploy-previews copy '{split:\\t:2}'"
 mode = "fork"
+
+# --pr is the accurate primitive here: it fetches the PR ref through gh, so it
+# works for branches that live on a fork and were never fetched locally. -o
+# makes it open an existing worktree instead of failing. The branch form is a
+# fallback for when gh is unavailable or unauthenticated.
+[actions.workmux]
+description = "Open (or create) a workmux worktree for this PR"
+command = "workmux add -o --pr '{split:\\t:5}' || workmux add -o '{split:\\t:4}'"
+mode = "execute"
