@@ -9,12 +9,20 @@
 #   dokploy-previews open <url>        open a url in the browser
 #   dokploy-previews copy <text>       copy text to the system clipboard
 #
-# Configuration — DOKPLOY_URL (e.g. https://dokploy.example.com) and DOKPLOY_API_KEY
-# (Dokploy: Settings > API/CLI). First hit wins:
-#   1. the environment
-#   2. ~/.config/dokploy/env             shell file exporting both
-#   3. pass show personal/dokploy/url    and personal/dokploy/api-key
-#   4. <script dir>/.env                 DOKPLOY_URL=… / DOKPLOY_API_KEY=… lines
+# Needs DOKPLOY_URL (e.g. https://dokploy.example.com) and DOKPLOY_API_KEY
+# (Dokploy: Settings > API/CLI). Each is resolved on its own, first hit wins:
+#
+#   1. the variable itself, from the environment
+#   2. ~/.config/dokploy/env — sourced as a shell file, so it can set either the
+#      variables directly or the *_CMD hooks below
+#   3. $DOKPLOY_URL_CMD / $DOKPLOY_API_KEY_CMD — any shell command; the first line
+#      of its stdout becomes the value (pass, 1password, bitwarden, sops, gopass, …)
+#   4. pass show personal/dokploy/url  /  personal/dokploy/api-key
+#   5. <script dir>/.env — DOKPLOY_URL=… / DOKPLOY_API_KEY=… lines
+#
+# Example ~/.config/dokploy/env:
+#   DOKPLOY_URL=https://dokploy.example.com
+#   DOKPLOY_API_KEY_CMD='pass show personal/dokploy/api-key'
 
 set -uo pipefail
 
@@ -38,21 +46,39 @@ from_dotenv() {
   sed -n "s/^$1=//p" "$SCRIPT_DIR/.env" | head -1
 }
 
+# resolve <VAR> <pass-entry> — print the value of VAR, or nothing if unresolvable.
+# Checked in order: VAR itself, ${VAR}_CMD, pass, the dotenv file next to this script.
+resolve() {
+  local var="$1" pass_entry="$2" cmd_var="${1}_CMD" cmd val
+  val="${!var:-}"
+  [ -n "$val" ] && { printf '%s' "$val"; return 0; }
+
+  cmd="${!cmd_var:-}"
+  if [ -n "$cmd" ]; then
+    val=$(eval "$cmd" 2>/dev/null | head -1)
+    [ -n "$val" ] && { printf '%s' "$val"; return 0; }
+  fi
+
+  val=$(pass show "$pass_entry" 2>/dev/null | head -1)
+  [ -n "$val" ] && { printf '%s' "$val"; return 0; }
+
+  val=$(from_dotenv "$var")
+  [ -n "$val" ] && { printf '%s' "$val"; return 0; }
+  return 1
+}
+
 load_config() {
   local cfg="${XDG_CONFIG_HOME:-$HOME/.config}/dokploy/env"
   # shellcheck disable=SC1090
   [ -f "$cfg" ] && . "$cfg"
 
-  [ -n "${DOKPLOY_URL:-}" ] || DOKPLOY_URL=$(pass show personal/dokploy/url 2>/dev/null | head -1)
-  [ -n "${DOKPLOY_URL:-}" ] || DOKPLOY_URL=$(from_dotenv DOKPLOY_URL)
-  [ -n "${DOKPLOY_API_KEY:-}" ] || DOKPLOY_API_KEY=$(pass show personal/dokploy/api-key 2>/dev/null | head -1)
-  [ -n "${DOKPLOY_API_KEY:-}" ] || DOKPLOY_API_KEY=$(from_dotenv DOKPLOY_API_KEY)
-
-  if [ -z "${DOKPLOY_URL:-}" ]; then
+  DOKPLOY_URL=$(resolve DOKPLOY_URL personal/dokploy/url)
+  if [ -z "$DOKPLOY_URL" ]; then
     CONFIG_ERR="DOKPLOY_URL is not set — see 'dokploy-previews --help'"
     return 1
   fi
-  if [ -z "${DOKPLOY_API_KEY:-}" ]; then
+  DOKPLOY_API_KEY=$(resolve DOKPLOY_API_KEY personal/dokploy/api-key)
+  if [ -z "$DOKPLOY_API_KEY" ]; then
     CONFIG_ERR="DOKPLOY_API_KEY is not set — see 'dokploy-previews --help'"
     return 1
   fi
@@ -285,6 +311,6 @@ _fetch-previews)
   load_config || die "$CONFIG_ERR"
   cmd_fetch_previews "$2" "$3"
   ;;
--h | --help | help) sed -n '2,17p' "$SELF" | sed 's/^#\( \|$\)//' ;;
+-h | --help | help) sed -n '2,25p' "$SELF" | sed 's/^#\( \|$\)//' ;;
 *) die "unknown subcommand: $1 (try --help)" ;;
 esac
