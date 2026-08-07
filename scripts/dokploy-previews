@@ -56,13 +56,18 @@ resolve() {
   val="${!var:-}"
   [ -n "$val" ] && { printf '%s' "$val"; return 0; }
 
+  # Don't pipe into head: that can SIGPIPE gpg mid-decrypt. Take the first line
+  # afterwards instead. Keep stderr only under `auth`, where the user is looking
+  # at a plain terminal — during `list` it would be painted over tv's UI.
   cmd="${!cmd_var:-}"
   if [ -n "$cmd" ]; then
-    val=$(eval "$cmd" 2>/dev/null | head -1)
+    if [ -n "${RESOLVE_VERBOSE:-}" ]; then val=$(eval "$cmd"); else val=$(eval "$cmd" 2>/dev/null); fi
+    val=${val%%$'\n'*}
     [ -n "$val" ] && { printf '%s' "$val"; return 0; }
   fi
 
-  val=$(pass show "$pass_entry" 2>/dev/null | head -1)
+  if [ -n "${RESOLVE_VERBOSE:-}" ]; then val=$(pass show "$pass_entry"); else val=$(pass show "$pass_entry" 2>/dev/null); fi
+  val=${val%%$'\n'*}
   [ -n "$val" ] && { printf '%s' "$val"; return 0; }
 
   val=$(from_dotenv "$var")
@@ -288,6 +293,7 @@ cmd_preview() {
 # plain terminal, instead of inside tv — a full-screen TUI owns stdin, so a
 # pinentry spawned underneath it can draw but never receives a keystroke.
 cmd_auth() {
+  RESOLVE_VERBOSE=1
   load_config || die "$CONFIG_ERR"
   api project.all >/dev/null 2>&1 || die "cannot reach $DOKPLOY_URL — check the url and key"
 }
