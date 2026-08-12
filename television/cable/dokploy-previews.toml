@@ -5,6 +5,17 @@
 #   <TAB> dashboard-url
 #
 # dashboard and logs are deliberately keyless — reach them with ctrl-x.
+
+# Deliberately NO `watch` here. Auto-reload sounds right for a stale-while-
+# revalidate list, but a reload that lands while the ctrl-x picker is open makes
+# tv resolve the action against the wrong row: in ActionPicker mode its
+# selected_index() returns the *picker's* index and applies it to the results
+# list. Measured over 8 runs of picking `dashboard` on row 2 — watch=0.3s got the
+# wrong row 2 times, watch=off got it right every time. Silently opening another
+# app's dashboard is worse than data that refreshes a beat later, so `list`
+# serves the cache, revalidates in the background, and the fresh rows show up on
+# the next open or on ctrl-r. The preview panel prints a "Fetched:" age so the
+# staleness is never hidden.
 # See `dokploy-previews --help` for the credentials it expects.
 
 [metadata]
@@ -34,6 +45,8 @@ ctrl-g = "actions:open_pr"
 ctrl-y = "actions:copy_preview"
 alt-y = "actions:copy_pr"
 alt-w = "actions:workmux"
+# Default ctrl-r would only re-read the cache; fetch first, then reload.
+ctrl-r = ["actions:refresh", "reload_source"]
 
 [actions.open_preview]
 description = "Open the preview deployment in the browser"
@@ -63,6 +76,11 @@ mode = "fork"
 description = "Open (or create) a workmux worktree for this PR"
 command = "workmux add -o --pr '{split:\\t:5}' || workmux add -o '{split:\\t:4}'"
 mode = "execute"
+
+[actions.refresh]
+description = "Fetch from Dokploy now, bypassing the cache"
+command = "dokploy-previews refresh"
+mode = "fork"
 
 # No keybinding on purpose: both live in the ctrl-x action picker.
 [actions.dashboard]

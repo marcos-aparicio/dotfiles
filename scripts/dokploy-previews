@@ -7,6 +7,10 @@
 #                                        display <TAB> preview-url <TAB> pr-url <TAB> id
 #                                        <TAB> branch <TAB> pr-number
 #                                        <TAB> dashboard-url
+#                                      Serves the cache immediately and refreshes
+#                                      behind it once older than
+#                                      $DOKPLOY_PREVIEWS_TTL seconds (default 60)
+#   dokploy-previews refresh           fetch now and rewrite the cache, silently
 #   dokploy-previews preview <id>      detail view for the tv preview panel
 #   dokploy-previews logs <id>         page the build log of the latest deployment
 #   dokploy-previews auth              resolve the credentials and exit; run this
@@ -42,9 +46,23 @@ die() {
   exit 1
 }
 
-# A row tv can render when there is nothing to list but something to say.
+# One EXIT trap for the whole script. Two separate `trap ... EXIT` calls would
+# silently replace each other — the refresh lock and the scratch dir both need
+# clearing, and they are registered by different functions.
+CLEAN_TMPD=""
+CLEAN_LOCK=""
+cleanup() {
+  [ -n "$CLEAN_TMPD" ] && rm -rf "$CLEAN_TMPD"
+  [ -n "$CLEAN_LOCK" ] && rmdir "$CLEAN_LOCK" 2>/dev/null
+  return 0
+}
+trap cleanup EXIT
+
+# A row tv can render when there is nothing to list but something to say. The
+# trailing tabs keep the field count identical to a real row, so the action
+# templates resolve to empty strings rather than to each other's values.
 row_message() {
-  printf '%s\t\t\t\n' "$1"
+  printf '%s\t\t\t\t\t\t\n' "$1"
 }
 
 from_dotenv() {
@@ -138,8 +156,19 @@ remote_slug() {
     sed -E 's#/+$##; s#\.git$##; s#^.*[:/]([^/:]+)/([^/]+)$#\1/\2#'
 }
 
-cache_file() {
-  printf '%s/%s.json\n' "$CACHE_DIR" "$(printf '%s' "$1" | tr '/' '_')"
+# Two files per repo: .json is the full payload (preview panel, logs), .tsv is the
+# pre-rendered row list. `list` only cats the .tsv, so the watch-driven reloads
+# cost a read instead of a fetch-and-render.
+cache_key() { printf '%s' "$1" | tr '/' '_'; }
+cache_json() { printf '%s/%s.json\n' "$CACHE_DIR" "$(cache_key "$1")"; }
+cache_tsv() { printf '%s/%s.tsv\n' "$CACHE_DIR" "$(cache_key "$1")"; }
+cache_lock() { printf '%s/%s.lock\n' "$CACHE_DIR" "$(cache_key "$1")"; }
+
+# Seconds since a path was last written; a huge number when it doesn't exist.
+file_age() {
+  local mtime
+  mtime=$(stat -c %Y "$1" 2>/dev/null) || { echo 999999; return 0; }
+  echo $(($(date +%s) - mtime))
 }
 
 # ------------------------------------------------------------------ subcommands
@@ -150,24 +179,13 @@ cmd_fetch_previews() {
   api previewDeployment.all "applicationId=$app_id" >"$dir/$app_id.json" 2>/dev/null || printf '[]' >"$dir/$app_id.json"
 }
 
-cmd_list() {
-  local slug owner repo projects apps ids cache
-  # stderr is folded into the result so failures show up as a row inside tv
-  slug=$(remote_slug "${1:-}" 2>&1) || {
-    row_message "✖ $slug"
-    exit 0
-  }
-  owner="${slug%%/*}"
-  repo="${slug##*/}"
-
-  load_config || {
-    row_message "✖ $CONFIG_ERR"
-    exit 0
-  }
-
+# Fetch everything and print the merged JSON array. On failure the reason goes to
+# stderr and the return is non-zero, leaving any existing cache untouched.
+fetch_merged() {
+  local owner="$1" repo="$2" projects apps ids merged
   projects=$(api project.all 2>/dev/null) || {
-    row_message "✖ cannot reach $DOKPLOY_URL — check DOKPLOY_URL / DOKPLOY_API_KEY"
-    exit 0
+    echo "cannot reach $DOKPLOY_URL — check DOKPLOY_URL / DOKPLOY_API_KEY" >&2
+    return 1
   }
 
   # applicationId -> { label, dashboard }. The dashboard route mirrors the Next.js
@@ -189,20 +207,18 @@ cmd_list() {
 
   ids=$(printf '%s' "$apps" | jq -r 'keys[]?')
   if [ -z "$ids" ]; then
-    row_message "✖ no applications visible with this API key"
-    exit 0
+    echo "no applications visible with this API key" >&2
+    return 1
   fi
 
-  # global, not local: the EXIT trap fires after this function's scope is gone
-  TMPD=$(mktemp -d) || die "mktemp failed"
-  trap 'rm -rf "${TMPD:-}"' EXIT
-  printf '%s\n' "$ids" | xargs -r -P 8 -I {} "$SELF" _fetch-previews "$TMPD" {}
+  # global, not local: cleanup runs after this function's scope is gone
+  CLEAN_TMPD=$(mktemp -d) || { echo "mktemp failed" >&2; return 1; }
+  printf '%s\n' "$ids" | xargs -r -P 8 -I {} "$SELF" _fetch-previews "$CLEAN_TMPD" {}
 
   # Keep the deployments whose pull request lives in this repo. Every forge puts
   # /<owner>/<repo>/ in the PR url (github /pull/N, gitlab /-/merge_requests/N,
   # gitea /pulls/N, bitbucket /pull-requests/N), so one substring test covers all.
-  local merged
-  merged=$(cat "$TMPD"/*.json 2>/dev/null | jq -s -c \
+  merged=$(cat "$CLEAN_TMPD"/*.json 2>/dev/null | jq -s -c \
     --argjson apps "$apps" --arg owner "$owner" --arg repo "$repo" '
     ("/" + ($owner | ascii_downcase) + "/" + ($repo | ascii_downcase) + "/") as $needle
     | [ add[]?
@@ -212,17 +228,12 @@ cmd_list() {
       ]
     | sort_by(.createdAt) | reverse')
   [ -n "$merged" ] || merged="[]"
+  printf '%s' "$merged"
+}
 
-  mkdir -p "$CACHE_DIR"
-  cache=$(cache_file "$slug")
-  printf '%s' "$merged" >"$cache"
-
-  if [ "$(printf '%s' "$merged" | jq 'length')" = "0" ]; then
-    row_message "○ no preview deployments for $owner/$repo"
-    exit 0
-  fi
-
-  printf '%s' "$merged" | jq -r '
+# stdin: merged json -> stdout: one tab separated row per preview deployment
+render_rows() {
+  jq -r '
     def pad($s; $n): $s + (($n - ($s | length)) as $d | if $d > 0 then " " * $d else "" end);
     def glyph: { done: "✔", running: "◐", error: "✖", idle: "○" }[.] // "•";
     .[]
@@ -246,14 +257,97 @@ cmd_list() {
       ] | @tsv'
 }
 
+# Fetch and atomically replace both cache files. Silent on success.
+cmd_refresh() {
+  local slug owner repo json tsv merged
+  slug=$(remote_slug "${1:-}" 2>&1) || { echo "$slug" >&2; return 1; }
+  owner="${slug%%/*}"
+  repo="${slug##*/}"
+  load_config || { echo "$CONFIG_ERR" >&2; return 1; }
+  merged=$(fetch_merged "$owner" "$repo") || return 1
+
+  mkdir -p "$CACHE_DIR"
+  json=$(cache_json "$slug")
+  tsv=$(cache_tsv "$slug")
+  printf '%s' "$merged" >"$json.tmp" && mv "$json.tmp" "$json"
+  if [ "$(printf '%s' "$merged" | jq 'length')" = "0" ]; then
+    row_message "○ no preview deployments for $owner/$repo" >"$tsv.tmp"
+  else
+    printf '%s' "$merged" | render_rows >"$tsv.tmp"
+  fi
+  mv "$tsv.tmp" "$tsv"
+}
+
+# Start a refresh that outlives this process. Its stdout must be detached or tv
+# would keep waiting on the source command's pipe for the child to finish.
+spawn_refresh() {
+  local slug="$1" remote="${2:-}" lock
+  mkdir -p "$CACHE_DIR"
+  lock=$(cache_lock "$slug")
+  if ! mkdir "$lock" 2>/dev/null; then
+    # A lock this old is a crashed refresh, not a running one.
+    [ "$(file_age "$lock")" -gt 120 ] || return 0
+    rmdir "$lock" 2>/dev/null
+    mkdir "$lock" 2>/dev/null || return 0
+  fi
+  if command -v setsid >/dev/null 2>&1; then
+    setsid "$SELF" _bg-refresh "$lock" "$remote" </dev/null >/dev/null 2>&1 &
+  else
+    "$SELF" _bg-refresh "$lock" "$remote" </dev/null >/dev/null 2>&1 &
+  fi
+  return 0
+}
+
+# internal: the detached half of spawn_refresh
+cmd_bg_refresh() {
+  CLEAN_LOCK="$1"
+  cmd_refresh "${2:-}" >/dev/null 2>&1
+}
+
+# Stale-while-revalidate: print what we already have, then refresh behind the
+# scenes when it has aged past the ttl. tv's `watch` re-runs this every couple of
+# seconds, so a completed refresh appears without the cursor moving.
+cmd_list() {
+  local slug tsv ttl err
+  slug=$(remote_slug "${1:-}" 2>&1) || {
+    row_message "✖ $slug"
+    return 0
+  }
+  tsv=$(cache_tsv "$slug")
+  ttl=${DOKPLOY_PREVIEWS_TTL:-60}
+
+  if [ ! -s "$tsv" ]; then
+    # Nothing cached, so there is nothing to be fast about — fetch inline.
+    err=$(cmd_refresh "${1:-}" 2>&1) || {
+      row_message "✖ ${err:-refresh failed}"
+      return 0
+    }
+  elif [ "$(file_age "$tsv")" -gt "$ttl" ]; then
+    spawn_refresh "$slug" "${1:-}"
+  fi
+
+  if [ -s "$tsv" ]; then
+    cat "$tsv"
+  else
+    row_message "○ no preview deployments found"
+  fi
+  return 0
+}
+
 cmd_preview() {
-  local id="$1" slug cache
+  local id="$1" slug cache age fetched
   [ -n "$id" ] || { echo "no selection"; return 0; }
   slug=$(remote_slug 2>/dev/null) || { echo "not inside a git repository"; return 0; }
-  cache=$(cache_file "$slug")
+  cache=$(cache_json "$slug")
   [ -f "$cache" ] || { echo "no cached data — press ctrl-r to reload"; return 0; }
 
-  jq -r --arg id "$id" '
+  # Rows come from cache, so say how old it is rather than implying it is live.
+  age=$(file_age "$cache")
+  if [ "$age" -lt 60 ]; then fetched="${age}s ago"
+  elif [ "$age" -lt 3600 ]; then fetched="$((age / 60))m ago"
+  else fetched="$((age / 3600))h ago"; fi
+
+  jq -r --arg id "$id" --arg fetched "$fetched" '
     def c($n; $s): "[" + $n + "m" + $s + "[0m";
     def lbl($s): c("36"; $s);
     def statuscolor: { done: "32", running: "33", error: "31", idle: "90" }[.] // "37";
@@ -288,6 +382,7 @@ cmd_preview() {
         "  " + lbl("Created: ") + ago($p.createdAt),
         (if ($p.expiresAt // "") != "" then "  " + lbl("Expires: ") + ago($p.expiresAt) else empty end),
         "  " + lbl("App:     ") + c("90"; $p.appName // "-"),
+        "  " + lbl("Fetched: ") + c("90"; $fetched),
         "",
         "  " + c("90"; "──────────────────────────────────────────────"),
         "",
@@ -325,7 +420,7 @@ cmd_logs() {
 
   [ -n "$id" ] || { page "No preview deployment selected."; return 0; }
   slug=$(remote_slug 2>&1) || { page "$slug"; return 0; }
-  cache=$(cache_file "$slug")
+  cache=$(cache_json "$slug")
   [ -f "$cache" ] || { page "No cached data yet — reload the channel with ctrl-r."; return 0; }
 
   dep_id=$(jq -r --arg id "$id" '
@@ -387,10 +482,12 @@ auth) cmd_auth ;;
 logs) cmd_logs "${2:-}" ;;
 open) cmd_open "${2:-}" ;;
 copy) cmd_copy "${2:-}" ;;
+refresh) cmd_refresh "${2:-}" ;;
+_bg-refresh) cmd_bg_refresh "$2" "${3:-}" ;;
 _fetch-previews)
   load_config || die "$CONFIG_ERR"
   cmd_fetch_previews "$2" "$3"
   ;;
--h | --help | help) sed -n '2,31p' "$SELF" | sed 's/^#\( \|$\)//' ;;
+-h | --help | help) sed -n '2,35p' "$SELF" | sed 's/^#\( \|$\)//' ;;
 *) die "unknown subcommand: $1 (try --help)" ;;
 esac
