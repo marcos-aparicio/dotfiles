@@ -19,10 +19,10 @@ mode = "execute"
 
 [actions.enter]
 description = "Enter workmux worktree and if it doesn't exist it adds it"
-command = "try { workmux open '{0}' } catch { workmux add '{0}' }"
+command = "try { workmux open '{}' } catch { workmux add '{}' }"
 mode = "execute"
 
 [actions.delete]
 description = "Delete workmux tree"
-command = "workmux remove -k '{0}'"
+command = "workmux remove -k '{}'"
 mode = "execute"
