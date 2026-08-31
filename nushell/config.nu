@@ -3,6 +3,8 @@
 $env.config.show_banner = false
 $env.config.edit_mode = "vi"
 $env.config.buffer_editor = $env.EDITOR
+$env.config.history.path = ($env.XDG_STATE_HOME | path join "nushell" "history.txt")
+mkdir ($env.config.history.path | path dirname)
 $env.config.cursor_shape = {
     vi_insert: line
     vi_normal: block
@@ -45,3 +47,4 @@ if (which zoxide | is-not-empty) {
 }
 
 use ./modules/aliases.nu *
+use ./modules/functions.nu *

@@ -46,9 +46,7 @@
     ~/.config/alacritty: alacritty
     ~/.config/xorg: xorg
     ~/.config/zsh: zsh
-    ~/.config/nushell/env.nu: nushell/env.nu
-    ~/.config/nushell/config.nu: nushell/config.nu
-    ~/.config/nushell/modules: nushell/modules
+    ~/.config/nushell: nushell
     ~/.config/tmux: tmux
     ~/.config/mpd: mpd
     ~/.config/espanso: espanso

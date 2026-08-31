@@ -74,7 +74,7 @@ mode = "fork"
 # fallback for when gh is unavailable or unauthenticated.
 [actions.workmux]
 description = "Open (or create) a workmux worktree for this PR"
-command = "workmux add -o --pr '{split:\\t:5}' || workmux add -o '{split:\\t:4}'"
+command = "try { workmux add -o --pr '{split:\\t:5}' } catch { workmux add -o '{split:\\t:4}' }"
 mode = "execute"
 
 [actions.refresh]

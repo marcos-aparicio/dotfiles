@@ -14,12 +14,12 @@ ctrl-d = "actions:delete"
 
 [actions.create_branch]
 description = "Creates a branch and opens a workmux worktree there"
-command = "read -p 'Enter branch name: ' branch && workmux add \"$branch\""
+command = "let branch = (input 'Enter branch name: '); workmux add $branch"
 mode = "execute"
 
 [actions.enter]
 description = "Enter workmux worktree and if it doesn't exist it adds it"
-command = "workmux open '{0}' || workmux add '{0}'"
+command = "try { workmux open '{0}' } catch { workmux add '{0}' }"
 mode = "execute"
 
 [actions.delete]
