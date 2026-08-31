@@ -15,11 +15,6 @@
 # format = '| 📥 $output|'
 # when =''' test "$(task rc.context= +in +PENDING count)" != "0"'''
 
-[custom.active-taskwarrior]
-description = "Show an icon when there's more than 0 started task(s)"
-format = ' 🚨 '
-when ='''! test -z "$(task active 2>/dev/null)" '''
-
 [custom.timewarrior]
 description = "Show current timewarrior tracking (tag and time spent)"
 command = '''
@@ -57,3 +52,11 @@ format = '[W$time]($style) '
 # right_format="""$all"""
 # when =''' test "$(task rc.context= +in +PENDING count)" != "0"'''
 
+
+[custom.staff_comment]
+command = "sh -c 'cat /tmp/staff_comment_cache 2>/dev/null || echo \"...\"'"
+when = true
+symbol = "👤 "
+style = "bold blue"
+format = "[$symbol($output)]($style) "
+disabled = false
