@@ -4,7 +4,18 @@
 
 cwd="$1"
 
-main_path=$(cd "$cwd" 2>/dev/null && workmux list --json 2>/dev/null | jq -r '.[] | select(.is_main) | .path')
+# Git exposes the main worktree's repository directory immediately, whereas
+# workmux list scans every worktree and can take close to a second in large
+# repositories. Keep workmux as a fallback for non-standard Git layouts.
+main_git_dir=$(git -C "$cwd" rev-parse --path-format=absolute --git-common-dir 2>/dev/null)
+case "$main_git_dir" in
+    */.git) main_path=${main_git_dir%/.git} ;;
+    *) main_path= ;;
+esac
+
+if [ -z "$main_path" ]; then
+    main_path=$(cd "$cwd" 2>/dev/null && workmux list --json 2>/dev/null | jq -r '.[] | select(.is_main) | .path')
+fi
 
 if [ -z "$main_path" ]; then
     tmux display-message "goto-main: not inside a workmux worktree"

@@ -26,8 +26,17 @@ trap 'rm -rf "$tmp_dir"' EXIT
 
 mkdir -p "$tmp_dir/bin" "$tmp_dir/project"
 
+cat >"$tmp_dir/bin/git" <<'EOF'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >> "$TEST_GIT_LOG"
+if [ "$1" = "-C" ] && [ "$3" = "rev-parse" ]; then
+  printf '%s/.git\n' "$TEST_MAIN_PATH"
+fi
+EOF
+
 cat >"$tmp_dir/bin/workmux" <<'EOF'
 #!/usr/bin/env bash
+printf '%s\n' "$*" >> "$TEST_WORKMUX_LOG"
 printf '[{"path":"%s","is_main":true}]\n' "$TEST_MAIN_PATH"
 EOF
 
@@ -67,17 +76,23 @@ cat >"$tmp_dir/bin/tmux" <<'EOF'
 printf 'tmux %s\n' "$*" >> "$TEST_TMUX_LOG"
 EOF
 
-chmod +x "$tmp_dir/bin/workmux" "$tmp_dir/bin/sesh" "$tmp_dir/bin/tmux"
+chmod +x "$tmp_dir/bin/git" "$tmp_dir/bin/workmux" "$tmp_dir/bin/sesh" "$tmp_dir/bin/tmux"
 
 export TEST_MAIN_PATH="$tmp_dir/project"
+export TEST_GIT_LOG="$tmp_dir/git.log"
+export TEST_WORKMUX_LOG="$tmp_dir/workmux.log"
 export TEST_SESH_MODE=tmux
 export TEST_SESH_LOG="$tmp_dir/sesh.log"
 export TEST_TMUX_LOG="$tmp_dir/tmux.log"
 export TEST_CONNECT_RESULT="$tmp_dir/connect.result"
+: > "$TEST_GIT_LOG"
+: > "$TEST_WORKMUX_LOG"
 
 PATH="$tmp_dir/bin:$PATH" "$script" "$TEST_MAIN_PATH"
 
 sesh_calls=$(cat "$TEST_SESH_LOG")
+assert_not_contains 'list --json' "$(cat "$TEST_WORKMUX_LOG")"
+assert_contains '-C ' "$(cat "$TEST_GIT_LOG")"
 assert_contains 'list -t --json' "$sesh_calls"
 assert_not_contains 'list --json' "$sesh_calls"
 assert_contains 'connected:project' "$(cat "$TEST_CONNECT_RESULT")"
