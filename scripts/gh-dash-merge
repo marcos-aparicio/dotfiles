@@ -1,0 +1,44 @@
+#!/usr/bin/env bash
+# gh-dash-merge — merge a PR with our house defaults, keeping the final say.
+#
+# gh-dash's built-in `m` runs a bare `gh pr merge`, which asks three questions:
+# merge method, delete-branch, and a final submit/cancel. This wrapper answers
+# the first two for us (merge commit + delete branch) and keeps the last one,
+# so a mis-keyed `m` is still recoverable.
+#
+# Usage: gh-dash-merge <owner/repo> <pr-number>
+
+set -uo pipefail
+
+repo=${1:?usage: gh-dash-merge <owner/repo> <pr-number>}
+number=${2:?usage: gh-dash-merge <owner/repo> <pr-number>}
+
+pause() {
+  printf '\nPress enter to return to gh-dash...'
+  read -r _ || true
+}
+
+title=$(gh pr view "$number" -R "$repo" --json title -q .title 2>/dev/null) || {
+  printf 'Could not read %s#%s\n' "$repo" "$number" >&2
+  pause
+  exit 1
+}
+
+printf 'Merge %s#%s — %s\n' "$repo" "$number" "$title"
+printf '  method: merge commit\n'
+printf '  branch: delete after merge\n\n'
+printf 'Submit? [y/N] '
+read -r answer
+
+case "$answer" in
+  [yY] | [yY][eE][sS]) ;;
+  *)
+    printf 'Cancelled.\n'
+    exit 0
+    ;;
+esac
+
+if ! gh pr merge "$number" -R "$repo" --merge --delete-branch; then
+  pause
+  exit 1
+fi

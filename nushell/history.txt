@@ -1,0 +1,7 @@
+tv workmux
+nvim
+nvim
+claude
+ls
+exit
+exit

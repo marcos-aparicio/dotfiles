@@ -1,0 +1,65 @@
+#!/usr/bin/env bash
+# Open gh-dash in a dedicated "dashes" tmux session, one window per repo,
+# always rooted at the CANONICAL repo (main worktree) even when invoked
+# from inside a linked git worktree. Meant to be run from a display-popup.
+#
+# Fast path: if the session + repo window already exist, just switch to it —
+# NO gh / extension / GitHub checks. Those only run when a window must be
+# created, so re-opening an existing dash never triggers a false failure.
+# NOTE: no `pipefail`. `grep -q` (and `awk ... exit`) close the pipe early,
+# which sends SIGPIPE to the upstream command (gh/git/tmux), making it exit
+# 141. With pipefail that 141 becomes the pipeline's status and would trigger
+# false failures ("extension not installed", "no remotes", etc.) even on a
+# successful match. Without pipefail the pipeline reports grep's status.
+set -eu
+
+session="dashes"
+DASH_CMD="gh dash"
+
+# Print a reason inside the popup and hold it open until a keypress,
+# otherwise display-popup -E closes before it can be read.
+die() {
+  printf '\n  %s\n\n  Press any key to close…' "$1"
+  read -rsn1 _ 2>/dev/null || true
+  exit 0
+}
+
+# --- Local git resolution only (fast, reliable, no network). --------------
+# Needed just to know which window to target; runs on every open.
+git rev-parse --is-inside-work-tree >/dev/null 2>&1 \
+  || die "Not inside a git repository."
+
+# Canonical repo = main worktree; always the first line of `git worktree list`,
+# from the main checkout or any linked worktree.
+main="$(git worktree list --porcelain 2>/dev/null | awk '/^worktree /{print $2; exit}')"
+[ -n "${main:-}" ] || die "Could not resolve the main worktree."
+
+# Window key: repo folder name, sanitized for tmux target syntax.
+# Capture first ($() strips the trailing newline) so tr doesn't turn it into '-'.
+win="$(basename "$main")"
+win="$(printf '%s' "$win" | tr -c 'A-Za-z0-9_-' '-')"
+
+# --- Fast path: session + window already exist → just switch, no checks. ---
+if tmux has-session -t "$session" 2>/dev/null \
+   && tmux list-windows -t "$session" -F '#W' 2>/dev/null | grep -qxF "$win"; then
+  tmux select-window -t "$session:$win"
+  exec tmux attach -t "$session:$win"
+fi
+
+# --- Slow path: we must create the window, so validate everything now. -----
+command -v gh >/dev/null 2>&1 || die "gh CLI not found on PATH."
+gh extension list 2>/dev/null | grep -q 'dlvhdr/gh-dash' \
+  || die "gh-dash extension not installed (run: gh extension install dlvhdr/gh-dash)."
+git -C "$main" remote -v | grep -q . \
+  || die "'$win' has no git remotes — nothing for gh-dash to show."
+(cd "$main" && gh repo view >/dev/null 2>&1) \
+  || die "'$win' isn't a GitHub repo gh can resolve (no GitHub remote?)."
+
+if ! tmux has-session -t "$session" 2>/dev/null; then
+  tmux new-session -d -s "$session" -n "$win" -c "$main" "$DASH_CMD"
+else
+  tmux new-window -t "$session" -n "$win" -c "$main" "$DASH_CMD"
+fi
+
+tmux select-window -t "$session:$win"
+exec tmux attach -t "$session:$win"

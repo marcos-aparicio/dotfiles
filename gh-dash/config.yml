@@ -1,4 +1,6 @@
 prSections:
+    - title: All Pull Requests
+      filters: is:open
     - title: My Pull Requests
       filters: is:open author:@me
     - title: Needs My Review
@@ -87,7 +89,16 @@ keybindings:
     - key: O
       name: open workmux branch for that pr
       command: >-
-        workmux open '{{.HeadRefName}}' || workmux add '{{.HeadRefName}}'
+        workmux open '{{.HeadRefName}}' or workmux add '{{.HeadRefName}}'
+    # Overrides the built-in merge: presets merge-commit + delete-branch and
+    # only asks the final submit/cancel question.
+    - key: m
+      name: merge (merge commit, delete branch)
+      command: >-
+        gh-dash-merge '{{.RepoName}}' '{{.PrNumber}}'
+    # Built-in merge, with gh's full interactive prompt, still reachable.
+    - key: M
+      builtin: merge
 
 repoPaths: {}
 theme:

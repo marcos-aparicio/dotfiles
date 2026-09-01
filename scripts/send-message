@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+
+BEARER_TOKEN=$(pass show personal/tuwunel/mybot-access-token 2>/dev/null)
+if [ -z "$BEARER_TOKEN" ] && [ -f "$SCRIPT_DIR/.env" ]; then
+  BEARER_TOKEN=$(grep -E '^MATRIX_BEARER_TOKEN=' "$SCRIPT_DIR/.env" | cut -d= -f2-)
+fi
+
+curl -X PUT "https://tuwunel.mcooxen.xyz/_matrix/client/v3/rooms/!pOxFr4jwAfqCYfKj4f:tuwunel.mcooxen.xyz/send/m.room.message/$(uuidgen)" \
+-H "Authorization: Bearer $BEARER_TOKEN" \
+-H "Content-Type: application/json" \
+-d "$(jq -nc --arg body "$1" '{"msgtype":"m.text","body":$body}')"
+  >> ~/.claude-notify-debug.log 2>&1
+

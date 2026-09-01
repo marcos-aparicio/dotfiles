@@ -1,0 +1,54 @@
+#!/usr/bin/env bash
+
+echo "started [$(date '+%H:%M:%S')] $TITLE: $MSG" >> ~/.claude-notify.log
+EVENT="${1:-done}"   # "done" or "needs-input"
+
+
+# Read the JSON payload Claude Code sends via stdin
+PAYLOAD=$(cat)
+
+# Extract the session ID
+TRANSCRIPT=$(echo "$PAYLOAD" | jq -r '.transcript_path')
+
+# Extract first user message as a "title" (first 60 chars)
+CLAUDE_TITLE=$(jq -r 'select(.type == "user") | .message.content | if type == "string" then . else .[0].text end' "$TRANSCRIPT" 2>/dev/null | head -1 | cut -c1-60)
+
+
+
+
+# Resolve bearer token: try pass first, fall back to .env in script's directory
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+BEARER_TOKEN=$(timeout 3 pass show personal/tuwunel/mybot-access-token 2>/dev/null </dev/null)
+if [ -z "$BEARER_TOKEN" ] && [ -f "$SCRIPT_DIR/.env" ]; then
+  BEARER_TOKEN=$(grep -E '^MATRIX_BEARER_TOKEN=' "$SCRIPT_DIR/.env" | cut -d= -f2-)
+fi
+
+# Grab tmux context
+SESSION=$(tmux display-message -p '#S' 2>/dev/null || echo "unknown")
+WINDOW=$(tmux display-message -p '#I' 2>/dev/null || echo "?")
+PANE=$(tmux display-message -p '#P' 2>/dev/null || echo "?")
+LOCATION="${SESSION}:${WINDOW}.${PANE}"
+
+if [ "$EVENT" = "done" ]; then
+  TITLE="Claude Code ✅"
+  MSG="Done [claude: ${CLAUDE_TITLE}] [tmux: ${SESSION}:${WINDOW}.${PANE}]"
+else
+  TITLE="Claude Code ⚠️"
+  MSG="Needs input [claude: ${CLAUDE_TITLE}] [tmux: ${SESSION}:${WINDOW}.${PANE}]"
+fi
+echo "=== CURL DEBUG $(date '+%H:%M:%S') ===" >> ~/.claude-notify-debug.log
+echo "TITLE: $TITLE" >> ~/.claude-notify-debug.log
+echo "MSG: $MSG" >> ~/.claude-notify-debug.log
+echo "TOKEN: $BEARER_TOKEN" >> ~/.claude-notify-debug.log
+echo "BODY: $(jq -nc --arg body "$TITLE - $MSG" '{"msgtype":"m.text","body":$body}')" >> ~/.claude-notify-debug.log
+
+
+curl -sS --max-time 10 -X PUT "https://tuwunel.mcooxen.xyz/_matrix/client/v3/rooms/!pOxFr4jwAfqCYfKj4f:tuwunel.mcooxen.xyz/send/m.room.message/$(uuidgen)" \
+-H "Authorization: Bearer $BEARER_TOKEN" \
+-H "Content-Type: application/json" \
+-d "$(jq -nc --arg body "$TITLE - $MSG" '{"msgtype":"m.text","body":$body}')" \
+  >> ~/.claude-notify-debug.log 2>&1
+
+echo "CURL EXIT CODE: $?" >> ~/.claude-notify-debug.log
+
+echo "finished [$(date '+%H:%M:%S')] $TITLE: $MSG" >> ~/.claude-notify.log
