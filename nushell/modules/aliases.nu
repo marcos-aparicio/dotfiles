@@ -40,6 +40,8 @@ export alias lzd = lazydocker
 export alias st = systemctl-tui
 export alias tvs = tv sesh
 export alias dt = devtitle
+export alias y = yazi
+export alias lf = yazi
 
 # Utilities.
 export alias c = clear
