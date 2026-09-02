@@ -1,6 +1,6 @@
 prSections:
-    - title: All Pull Requests
-      filters: is:open
+    - title: Dev-SHP Pull Requests
+      filters: is:open org:Dev-SHP
     - title: My Pull Requests
       filters: is:open author:@me
     - title: Needs My Review
