@@ -1,11 +1,47 @@
 #!/usr/bin/env bash
-# Open gh-dash in a dedicated "dashes" tmux session, one window per repo,
-# always rooted at the CANONICAL repo (main worktree) even when invoked
-# from inside a linked git worktree. Meant to be run from a display-popup.
+# Switch to gh-dash for the current repo, in a dedicated per-repo tmux session
+# ("dash/<repo>"), always rooted at the CANONICAL repo (main worktree) even
+# when invoked from inside a linked git worktree.
 #
-# Fast path: if the session + repo window already exist, just switch to it —
-# NO gh / extension / GitHub checks. Those only run when a window must be
-# created, so re-opening an existing dash never triggers a false failure.
+# Meant to be run from `run-shell`, NOT a popup: it switches the client to the
+# dash session instead of opening a nested one. Come back with prefix+k
+# (switch-client -l).
+#
+# ONE SESSION PER REPO, each holding exactly ONE window. A single shared
+# session let you next-window your way into other repos' dashboards; with one
+# window per session there is nowhere to wander, and each repo's dash is a
+# direct switch target.
+#
+# The window may be split: gh-dash on top, a short pane underneath listing this
+# repo's Dokploy preview deployments, each row clickable through OSC 8. gh-dash
+# has no way to render a column of its own (its PR columns are a fixed struct,
+# and a commit status would only fold into the aggregate CI glyph), so preview
+# state lives beside the table instead of inside it.
+#
+# A repo with no previews gets no pane at all, and the pane is only as tall as
+# it needs to be, capped at DASH_PREVIEW_LINES (0 disables the split outright).
+# Whether there is anything to show takes a Dokploy round trip, so that question
+# is answered off to the side: the dash opens immediately and the pane appears a
+# moment later if it is warranted. One consequence worth knowing — if the pass
+# store is locked, the detached check has no terminal to prompt from and quietly
+# finds nothing, so run `dokploy-previews auth` once per boot to keep the pane
+# showing up.
+#
+# Fast path: if the session already exists, just switch — NO gh / extension /
+# GitHub checks. Those only run when the session must be created, so
+# re-opening an existing dash never triggers a false failure.
+#
+# gh-dash has no disk cache (there are no flags for one), so the live process
+# IS the cache: the first open per repo pays the GitHub fetch, every reopen is
+# instant for as long as the session lives.
+#
+# Session targets are written as "=$session" — the leading '=' forces an exact
+# tmux name match, so dash/foo cannot resolve to dash/foo-legacy.
+#
+# These sessions are hidden from the sesh picker via `blacklist = ["^dash/"]`
+# in ~/.config/sesh/sesh.toml. Reach one outside this binding with
+# `tmux attach -t "=dash/<repo>"` or prefix+S.
+#
 # NOTE: no `pipefail`. `grep -q` (and `awk ... exit`) close the pipe early,
 # which sends SIGPIPE to the upstream command (gh/git/tmux), making it exit
 # 141. With pipefail that 141 becomes the pipeline's status and would trigger
@@ -13,53 +49,76 @@
 # successful match. Without pipefail the pipeline reports grep's status.
 set -eu
 
-session="dashes"
 DASH_CMD="gh dash"
+# The preview pane: how tall, and how often it redraws. Both are cheap to change
+# and neither is worth a flag.
+PREVIEW_LINES="${DASH_PREVIEW_LINES:-16}"
+PREVIEW_INTERVAL="${DASH_PREVIEW_INTERVAL:-30}"
 
-# Print a reason inside the popup and hold it open until a keypress,
-# otherwise display-popup -E closes before it can be read.
+# Under run-shell there is no popup to print into, so surface the reason on the
+# status line and stop.
 die() {
-  printf '\n  %s\n\n  Press any key to close…' "$1"
-  read -rsn1 _ 2>/dev/null || true
+  tmux display-message "gh-dash: $1"
   exit 0
 }
 
 # --- Local git resolution only (fast, reliable, no network). --------------
-# Needed just to know which window to target; runs on every open.
+# Needed just to know which session to target; runs on every open.
 git rev-parse --is-inside-work-tree >/dev/null 2>&1 \
-  || die "Not inside a git repository."
+  || die "not inside a git repository."
 
 # Canonical repo = main worktree; always the first line of `git worktree list`,
 # from the main checkout or any linked worktree.
 main="$(git worktree list --porcelain 2>/dev/null | awk '/^worktree /{print $2; exit}')"
-[ -n "${main:-}" ] || die "Could not resolve the main worktree."
+[ -n "${main:-}" ] || die "could not resolve the main worktree."
 
-# Window key: repo folder name, sanitized for tmux target syntax.
+# Session key: repo folder name, sanitized for tmux target syntax.
 # Capture first ($() strips the trailing newline) so tr doesn't turn it into '-'.
 win="$(basename "$main")"
 win="$(printf '%s' "$win" | tr -c 'A-Za-z0-9_-' '-')"
+session="dash/$win"
 
-# --- Fast path: session + window already exist → just switch, no checks. ---
-if tmux has-session -t "$session" 2>/dev/null \
-   && tmux list-windows -t "$session" -F '#W' 2>/dev/null | grep -qxF "$win"; then
-  tmux select-window -t "$session:$win"
-  exec tmux attach -t "$session:$win"
+# --- Fast path: session already exists → just switch, no checks. ----------
+if tmux has-session -t "=$session" 2>/dev/null; then
+  exec tmux switch-client -t "=$session"
 fi
 
-# --- Slow path: we must create the window, so validate everything now. -----
+# --- Slow path: we must create the session, so validate everything now. ---
 command -v gh >/dev/null 2>&1 || die "gh CLI not found on PATH."
 gh extension list 2>/dev/null | grep -q 'dlvhdr/gh-dash' \
   || die "gh-dash extension not installed (run: gh extension install dlvhdr/gh-dash)."
 git -C "$main" remote -v | grep -q . \
-  || die "'$win' has no git remotes — nothing for gh-dash to show."
+  || die "'$win' has no git remotes — nothing to show."
 (cd "$main" && gh repo view >/dev/null 2>&1) \
   || die "'$win' isn't a GitHub repo gh can resolve (no GitHub remote?)."
 
-if ! tmux has-session -t "$session" 2>/dev/null; then
-  tmux new-session -d -s "$session" -n "$win" -c "$main" "$DASH_CMD"
-else
-  tmux new-window -t "$session" -n "$win" -c "$main" "$DASH_CMD"
+# -P -F prints the pane the session was created with, so the split below can
+# target it by id rather than by an index that pane-base-index could shift.
+dash_pane="$(tmux new-session -d -P -F '#{pane_id}' -s "$session" -n "$win" -c "$main" "$DASH_CMD")"
+
+# Count first, split only if the count is non-zero, and size the pane to the
+# rows it will hold (plus one for the header). -d keeps the focus on gh-dash:
+# the pane is there to be glanced at, not typed into.
+preview_pane_script='
+  cd "$1" || exit 0
+  command -v dokploy-previews >/dev/null 2>&1 || exit 0
+  n=$(dokploy-previews count 2>/dev/null) || exit 0
+  case "$n" in "" | *[!0-9]*) exit 0 ;; esac
+  [ "$n" -gt 0 ] || exit 0
+  lines=$((n + 1))
+  [ "$lines" -le "$2" ] || lines="$2"
+  [ "$lines" -ge 3 ] || lines=3
+  tmux split-window -d -v -l "$lines" -t "$3" -c "$1" "dokploy-previews watch $4"
+'
+
+if [ "${PREVIEW_LINES:-0}" != "0" ]; then
+  if command -v setsid >/dev/null 2>&1; then
+    setsid -f sh -c "$preview_pane_script" _ \
+      "$main" "$PREVIEW_LINES" "$dash_pane" "$PREVIEW_INTERVAL" </dev/null >/dev/null 2>&1 || true
+  else
+    sh -c "$preview_pane_script" _ \
+      "$main" "$PREVIEW_LINES" "$dash_pane" "$PREVIEW_INTERVAL" </dev/null >/dev/null 2>&1 &
+  fi
 fi
 
-tmux select-window -t "$session:$win"
-exec tmux attach -t "$session:$win"
+exec tmux switch-client -t "=$session"
