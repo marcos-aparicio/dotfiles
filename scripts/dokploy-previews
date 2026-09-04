@@ -17,7 +17,36 @@
 #                                      before tv so any gpg/pass prompt happens
 #                                      in a plain terminal rather than under a TUI
 #   dokploy-previews open <url>        open a url in the browser
+#   dokploy-previews open-branch <branch>
+#                                      open that branch's preview URL in the browser
+#   dokploy-previews open-pr <owner>/<repo> <pr-number>
+#                                      open that pull request's preview URL in the
+#                                      browser, without needing a local checkout
+#   dokploy-previews all               every preview deployment this API key can
+#                                      see, grouped by repo. One fetch already
+#                                      covers every repo, so this is the cheap
+#                                      way to ask "which PRs have a preview?"
+#   dokploy-previews count [<remote>]  how many previews this repo has; 0 is a
+#                                      normal answer, a bad repo is an error
+#   dokploy-previews watch [<remote>] [seconds]
+#                                      this repo's previews on a loop, redrawn
+#                                      every <seconds> (default 30) — meant for
+#                                      a small pane beside a dashboard
+#   dokploy-previews audit             the inverse: open pull requests Dokploy
+#                                      was supposed to build a preview for and
+#                                      didn't. Reads each application's preview
+#                                      settings (trigger labels, ceiling) and
+#                                      needs the gh CLI
 #   dokploy-previews copy <text>       copy text to the system clipboard
+#   dokploy-previews statusline        one line for the Claude Code statusLine:
+#                                      the preview belonging to the checked-out
+#                                      branch, its build state, and its URL as
+#                                      an OSC 8 hyperlink. Silent whenever there
+#                                      is nothing to say, and never fetches
+#                                      inline. $DOKPLOY_STATUSLINE_TTL sets how
+#                                      stale the cache may get, HOST=1 spells the
+#                                      host out, LINKS=0 prints the bare url for
+#                                      terminals without OSC 8
 #
 # Needs DOKPLOY_URL (e.g. https://dokploy.example.com) and DOKPLOY_API_KEY
 # (Dokploy: Settings > API/CLI). Each is resolved on its own, first hit wins:
@@ -39,6 +68,11 @@ set -uo pipefail
 SELF="$(readlink -f "${BASH_SOURCE[0]}")"
 SCRIPT_DIR="$(dirname "$SELF")"
 CACHE_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/dokploy-previews"
+# Pseudo-slug for the account-wide set: one fetch already returns every
+# application's previews, so `all` and `audit` cache the unfiltered merge under
+# this name instead of re-fetching once per repo. Not a legal <owner>/<repo>,
+# so it can never collide with a real one.
+ALL_SLUG="@all"
 CONFIG_ERR=""
 
 die() {
@@ -50,9 +84,13 @@ die() {
 # silently replace each other — the refresh lock and the scratch dir both need
 # clearing, and they are registered by different functions.
 CLEAN_TMPD=""
+CLEAN_TMPD2=""
+CLEAN_TMPD3=""
 CLEAN_LOCK=""
 cleanup() {
   [ -n "$CLEAN_TMPD" ] && rm -rf "$CLEAN_TMPD"
+  [ -n "$CLEAN_TMPD2" ] && rm -rf "$CLEAN_TMPD2"
+  [ -n "$CLEAN_TMPD3" ] && rm -rf "$CLEAN_TMPD3"
   [ -n "$CLEAN_LOCK" ] && rmdir "$CLEAN_LOCK" 2>/dev/null
   return 0
 }
@@ -136,8 +174,14 @@ api() {
 }
 
 # The remote to compare against: the upstream of the current branch, else origin.
+# An explicit <owner>/<repo> is taken as the answer and skips git entirely — that
+# is the only way callers outside a checkout (gh-dash keybindings) can name a repo.
 remote_slug() {
   local remote="${1:-}" branch url
+  if [[ "$remote" == */* ]]; then
+    printf '%s\n' "$remote"
+    return 0
+  fi
   git rev-parse --is-inside-work-tree >/dev/null 2>&1 || {
     echo "not inside a git repository" >&2
     return 1
@@ -154,6 +198,16 @@ remote_slug() {
   # scp-style, ssh:// and https:// all reduce to the trailing <owner>/<repo>
   printf '%s\n' "$url" |
     sed -E 's#/+$##; s#\.git$##; s#^.*[:/]([^/:]+)/([^/]+)$#\1/\2#'
+}
+
+# The cache slug a subcommand should work against: the account-wide pseudo-slug,
+# or whatever remote_slug makes of the argument.
+resolve_slug() {
+  if [ "${1:-}" = "$ALL_SLUG" ]; then
+    printf '%s\n' "$ALL_SLUG"
+    return 0
+  fi
+  remote_slug "${1:-}"
 }
 
 # Two files per repo: .json is the full payload (preview panel, logs), .tsv is the
@@ -177,6 +231,20 @@ file_age() {
 cmd_fetch_previews() {
   local dir="$1" app_id="$2"
   api previewDeployment.all "applicationId=$app_id" >"$dir/$app_id.json" 2>/dev/null || printf '[]' >"$dir/$app_id.json"
+}
+
+# internal: fetch one application's full settings into <dir>/<id>.json
+cmd_fetch_app() {
+  local dir="$1" app_id="$2"
+  api application.one "applicationId=$app_id" >"$dir/$app_id.json" 2>/dev/null || printf '{}' >"$dir/$app_id.json"
+}
+
+# internal: fetch one repo's open pull requests into <dir>/<owner>_<repo>.json
+cmd_fetch_prs() {
+  local dir="$1" repo="$2" out
+  out="$dir/$(printf '%s' "$repo" | tr '/' '_').json"
+  gh pr list -R "$repo" --state open --limit 200 \
+    --json number,title,labels,isDraft,url >"$out" 2>/dev/null || printf '[]' >"$out"
 }
 
 # Fetch everything and print the merged JSON array. On failure the reason goes to
@@ -218,13 +286,18 @@ fetch_merged() {
   # Keep the deployments whose pull request lives in this repo. Every forge puts
   # /<owner>/<repo>/ in the PR url (github /pull/N, gitlab /-/merge_requests/N,
   # gitea /pulls/N, bitbucket /pull-requests/N), so one substring test covers all.
+  # An empty owner keeps everything — that is the account-wide set `all` renders.
   merged=$(cat "$CLEAN_TMPD"/*.json 2>/dev/null | jq -s -c \
     --argjson apps "$apps" --arg owner "$owner" --arg repo "$repo" '
-    ("/" + ($owner | ascii_downcase) + "/" + ($repo | ascii_downcase) + "/") as $needle
+    # <owner>/<repo> are the two path segments before the PR kind, on every forge
+    def slug: (. // "") | split("/") | if length >= 5 then .[3] + "/" + .[4] else "" end;
+    (if $owner == "" then ""
+     else "/" + ($owner | ascii_downcase) + "/" + ($repo | ascii_downcase) + "/" end) as $needle
     | [ add[]?
-        | select(((.pullRequestURL // "") | ascii_downcase) | contains($needle))
+        | select($needle == "" or (((.pullRequestURL // "") | ascii_downcase) | contains($needle)))
         | ($apps[.applicationId] // {}) as $a
-        | . + { appLabel: ($a.label // "?"), dashboard: ($a.dashboard // "") }
+        | . + { appLabel: ($a.label // "?"), dashboard: ($a.dashboard // ""),
+                repoSlug: (.pullRequestURL | slug) }
       ]
     | sort_by(.createdAt) | reverse')
   [ -n "$merged" ] || merged="[]"
@@ -260,9 +333,15 @@ render_rows() {
 # Fetch and atomically replace both cache files. Silent on success.
 cmd_refresh() {
   local slug owner repo json tsv merged
-  slug=$(remote_slug "${1:-}" 2>&1) || { echo "$slug" >&2; return 1; }
-  owner="${slug%%/*}"
-  repo="${slug##*/}"
+  if [ "${1:-}" = "$ALL_SLUG" ]; then
+    slug="$ALL_SLUG"
+    owner=""
+    repo=""
+  else
+    slug=$(remote_slug "${1:-}" 2>&1) || { echo "$slug" >&2; return 1; }
+    owner="${slug%%/*}"
+    repo="${slug##*/}"
+  fi
   load_config || { echo "$CONFIG_ERR" >&2; return 1; }
   merged=$(fetch_merged "$owner" "$repo") || return 1
 
@@ -270,6 +349,8 @@ cmd_refresh() {
   json=$(cache_json "$slug")
   tsv=$(cache_tsv "$slug")
   printf '%s' "$merged" >"$json.tmp" && mv "$json.tmp" "$json"
+  # The account-wide set has no tv channel behind it, so it caches json only.
+  [ "$slug" = "$ALL_SLUG" ] && return 0
   if [ "$(printf '%s' "$merged" | jq 'length')" = "0" ]; then
     row_message "○ no preview deployments for $owner/$repo" >"$tsv.tmp"
   else
@@ -309,7 +390,7 @@ cmd_bg_refresh() {
 # seconds, so a completed refresh appears without the cursor moving.
 cmd_list() {
   local slug tsv ttl err
-  slug=$(remote_slug "${1:-}" 2>&1) || {
+  slug=$(resolve_slug "${1:-}" 2>&1) || {
     row_message "✖ $slug"
     return 0
   }
@@ -332,6 +413,236 @@ cmd_list() {
     row_message "○ no preview deployments found"
   fi
   return 0
+}
+
+# stdin: merged json -> stdout: one line per preview, repo first. Plain text
+# rather than tsv: nothing parses this, it is for eyeballing in a pane, so it
+# stays flat and dense enough to fit under a dashboard without scrolling.
+#
+# The number links to the pull request and the title to the preview itself, as
+# OSC 8 hyperlinks — those urls are 80-odd characters of generated hostname, far
+# too wide to print, but a terminal that honours OSC 8 makes the row clickable
+# anyway. DOKPLOY_PREVIEWS_LINKS=0 for terminals that would print the escapes
+# literally rather than dropping the ones they cannot honour.
+render_all() {
+  local w links
+  w=$(tput cols 2>/dev/null) || w=100
+  [ "$w" -ge 40 ] 2>/dev/null || w=100
+  links=${DOKPLOY_PREVIEWS_LINKS:-1}
+  jq -r --argjson w "$w" --arg links "$links" '
+    def glyph: { done: "✔", running: "◐", error: "✖", idle: "○" }[.] // "•";
+    def spc($n): if $n > 0 then " " * $n else "" end;
+    def pad($s; $n): $s + spc($n - ($s | length));
+    def clip($s; $n): if ($s | length) > $n and $n > 1 then $s[0:($n - 1)] + "…" else $s end;
+    # OSC 8: ESC ] 8 ; ; <url> ST <text> ESC ] 8 ; ; ST
+    def link($url; $text):
+      if ($url // "") == "" or $links == "0" then $text
+      else "\u001b]8;;" + $url + "\u001b\\" + $text + "\u001b]8;;\u001b\\" end;
+    def preview_url:
+      .domain
+      | if . == null or (.host // "") == "" then ""
+        else (if .https then "https" else "http" end) + "://" + .host
+             + ((.path // "/") | if . == "/" or . == "" then "" else . end)
+        end;
+
+    if length == 0 then "no preview deployments"
+    else
+      # A single-repo view has nothing to disambiguate, so the column goes away
+      ((if (map(.repoSlug) | unique | length) <= 1 then 0
+        else ([ .[] | (.repoSlug // "(unknown)") | length ] | max) end)) as $rw
+      | sort_by((.repoSlug // ""), ((.pullRequestNumber // "0") | tonumber? // 0))
+      | reverse | sort_by(.repoSlug // "") | .[]
+      | ("#" + (.pullRequestNumber // "?")) as $num
+      | ((.previewStatus // "idle") | glyph) + " "
+        + (if $rw == 0 then "" else pad((.repoSlug // "(unknown)"); $rw + 2) end)
+        + link((.pullRequestURL // ""); $num) + spc(6 - ($num | length))
+        + pad((.previewStatus // "idle"); 9)
+        + link(preview_url; clip((.pullRequestTitle // "(no title)"); $w - $rw - 20))
+    end'
+}
+
+# Keep a cache usable, same stale-while-revalidate deal as list: serve what is
+# there, refresh behind it, and only block when there is nothing at all. Takes
+# any target resolve_slug accepts — a repo, a remote, or the account-wide
+# pseudo-slug — and prints the path of the json it made current.
+ensure_cache() {
+  local target="${1:-}" slug json ttl err
+  slug=$(resolve_slug "$target" 2>&1) || { echo "$slug" >&2; return 1; }
+  json=$(cache_json "$slug")
+  ttl=${DOKPLOY_PREVIEWS_TTL:-60}
+  if [ ! -s "$json" ]; then
+    err=$(cmd_refresh "$target" 2>&1) || {
+      echo "dokploy-previews: ${err:-refresh failed}" >&2
+      return 1
+    }
+  elif [ "$(file_age "$json")" -gt "$ttl" ]; then
+    spawn_refresh "$slug" "$target"
+  fi
+  printf '%s\n' "$json"
+}
+
+cmd_all() {
+  local json
+  json=$(ensure_cache "$ALL_SLUG") || return 1
+  [ -s "$json" ] || { echo "no preview deployments found"; return 0; }
+  render_all <"$json"
+}
+
+# How many previews one repo has. Zero is a normal answer, not an error — it is
+# what tells a caller (tmux-dash) there is nothing worth opening a pane for.
+# A repo that cannot be resolved or reached returns non-zero instead.
+cmd_count() {
+  local json
+  json=$(ensure_cache "${1:-}") || return 1
+  [ -s "$json" ] || { echo 0; return 0; }
+  jq 'length' <"$json"
+}
+
+# One repo's previews on a loop, for a pane beside a dashboard. Scoped like
+# list: no argument means the repo of the current directory. `all` stays the
+# account-wide view. The frame is built before the screen is cleared, so a tick
+# never leaves the pane blank while the render runs.
+cmd_watch() {
+  local target="${1:-}" interval="${2:-}" out json
+  # <repo>, <remote>, or just the interval — a bare number can only be the latter
+  case "$target" in
+  '') ;;
+  *[!0-9]*) ;;
+  *) interval="$target"; target="" ;;
+  esac
+  interval="${interval:-30}"
+  case "$interval" in
+  '' | *[!0-9]*) die "watch interval must be a whole number of seconds" ;;
+  esac
+  [ "$interval" -ge 5 ] || die "watch interval must be at least 5 seconds"
+
+  while :; do
+    if json=$(ensure_cache "$target" 2>&1) && [ -s "$json" ]; then
+      out=$(render_all <"$json")
+    else
+      out="${json:-no preview deployments}"
+    fi
+    printf '\033[H\033[2J\033[3J\033[2mdokploy previews · %s\033[0m\n%s\n' \
+      "$(date +%H:%M)" "$out"
+    sleep "$interval"
+  done
+}
+
+# owner/repo -> what Dokploy is supposed to build a preview for. project.all
+# carries only ids and names, so the wiring (owner, repository, the labels that
+# trigger a preview, the per-app ceiling) costs one application.one per app.
+# Apps of the same repo collapse into one row; a single app with no trigger
+# labels means every pull request is expected, so the union goes empty.
+#
+# Settings, not state: cached for an hour ($DOKPLOY_WIRING_TTL) so a second
+# audit costs nothing. The previews themselves keep their own short ttl.
+app_wiring() {
+  local cache ttl projects ids out
+  cache="$CACHE_DIR/@wiring.json"
+  ttl=${DOKPLOY_WIRING_TTL:-3600}
+  if [ -s "$cache" ] && [ "$(file_age "$cache")" -le "$ttl" ]; then
+    cat "$cache"
+    return 0
+  fi
+
+  projects=$(api project.all 2>/dev/null) || {
+    echo "cannot reach $DOKPLOY_URL — check DOKPLOY_URL / DOKPLOY_API_KEY" >&2
+    return 1
+  }
+  ids=$(printf '%s' "$projects" |
+    jq -r '.[]? | (.environments // [])[] | (.applications // [])[].applicationId')
+  [ -n "$ids" ] || { echo "no applications visible with this API key" >&2; return 1; }
+
+  CLEAN_TMPD2=$(mktemp -d) || { echo "mktemp failed" >&2; return 1; }
+  printf '%s\n' "$ids" | xargs -r -P 8 -I {} "$SELF" _fetch-app "$CLEAN_TMPD2" {}
+
+  out=$(cat "$CLEAN_TMPD2"/*.json 2>/dev/null | jq -s -c '
+    [ .[] | select(.isPreviewDeploymentsActive == true)
+      | { repo: ((.owner // "") + "/" + (.repository // "")),
+          labels: (.previewLabels // []),
+          limit: (.previewLimit // 0),
+          app: (.name // "?") } ]
+    | group_by(.repo)
+    | map({ repo: .[0].repo,
+            labels: (if any(.[]; (.labels | length) == 0) then []
+                     else (map(.labels) | add | unique) end),
+            limit: (map(.limit) | max),
+            apps: (map(.app) | unique) })
+    | sort_by(.repo)') || return 1
+
+  mkdir -p "$CACHE_DIR"
+  printf '%s' "$out" >"$cache.tmp" && mv "$cache.tmp" "$cache"
+  printf '%s' "$out"
+}
+
+# The inverse of `all`: reconcile what Dokploy built against what the trigger
+# labels say it should have built. Absence is the signal no dashboard column can
+# show — a preview that silently never got built looks exactly like a repo
+# nobody has scrolled to.
+#
+# Labels are the trigger, NOT a marker: removing the label afterwards leaves the
+# preview running, and closing the PR does too until it expires. So the report
+# is two-sided — pull requests missing a preview, and previews holding a slot
+# without a labelled open PR behind them.
+cmd_audit() {
+  local wiring prs repos json
+  command -v gh >/dev/null 2>&1 ||
+    die "gh CLI not found on PATH — audit needs it to list open pull requests"
+  command -v jq >/dev/null 2>&1 || die "jq not found on PATH"
+  load_config || die "$CONFIG_ERR"
+  ensure_all_cache || return 1
+  json=$(cache_json "$ALL_SLUG")
+
+  wiring=$(app_wiring) || return 1
+  if [ "$(printf '%s' "$wiring" | jq 'length')" = "0" ]; then
+    echo "no application has preview deployments enabled"
+    return 0
+  fi
+
+  repos=$(printf '%s' "$wiring" | jq -r '.[].repo')
+  CLEAN_TMPD3=$(mktemp -d) || die "mktemp failed"
+  printf '%s\n' "$repos" | xargs -r -P 6 -I {} "$SELF" _fetch-prs "$CLEAN_TMPD3" {}
+
+  prs=$(for f in "$CLEAN_TMPD3"/*.json; do
+    [ -e "$f" ] || continue
+    jq -c --arg r "$(basename "$f" .json)" '{ key: $r, value: . }' "$f"
+  done | jq -s -c 'from_entries')
+
+  jq -r -n --argjson wiring "$wiring" --argjson prs "$prs" --slurpfile previews "$json" '
+    def pad($s; $n): $s + (($n - ($s | length)) as $d | if $d > 0 then " " * $d else "" end);
+    # expected = the app takes every PR, or the PR carries a trigger label
+    def expected($w): ($w.labels | length) == 0
+      or ([.labels[]?.name] as $names | ($w.labels | map(. as $l | $names | index($l)) | any));
+
+    ($previews[0] // []) as $deployed
+    | ($wiring | map(.repo | length) | max) as $pw
+    | ($wiring[]
+       | . as $w
+       | ($prs[($w.repo | gsub("/"; "_"))] // []) as $open
+       | ($deployed | map(select(.repoSlug == $w.repo))) as $built
+       | ($built | map(.pullRequestNumber // "" | tostring)) as $have
+       | ($open | map(select(expected($w)))) as $want
+       | ($want | map(select(((.number | tostring) as $n | $have | index($n)) | not))) as $missing
+       | ($want | map(.number | tostring)) as $wantNums
+       | ($built | map(select((.pullRequestNumber // "" | tostring) as $n | ($wantNums | index($n)) | not))) as $other
+       | (if ($w.labels | length) == 0 then "every PR"
+          else "labels: " + ($w.labels | join(", ")) end) as $rule
+       | ((if ($missing | length) == 0 then "✔ " else "✖ " end)
+          + pad($w.repo; $pw + 2)
+          + (($want | length) - ($missing | length) | tostring) + "/" + (($want | length) | tostring)
+          + " expected built · " + (($other | length) | tostring) + " other · "
+          + (($built | length) | tostring) + "/" + ($w.limit | tostring) + " slots"
+          + "   (" + $rule + ")"),
+         ($missing[] | "      ✖ #" + (.number | tostring) + "  " + .title
+                       + (if .isDraft then "  [draft]" else "" end)),
+         (if ($want | length) > $w.limit then
+            "      · " + (($want | length) | tostring) + " expected exceeds the limit of "
+              + ($w.limit | tostring) + " — Dokploy drops the overflow by design"
+          else empty end)
+      ),
+      "",
+      "other = a preview whose pull request is closed, or open but no longer carrying a",
+      "trigger label. It keeps running and keeps holding a slot until it expires."'
 }
 
 cmd_preview() {
@@ -455,6 +766,29 @@ cmd_open() {
   disown 2>/dev/null
 }
 
+# Open the preview belonging to one git branch. cmd_list uses the cache when
+# available and refreshes it as needed, so this is fast without risking a stale
+# preview URL becoming permanent.
+cmd_open_branch() {
+  local branch="$1" url
+  [ -n "$branch" ] || die "no branch specified"
+  url=$(cmd_list | awk -F '\t' -v branch="$branch" '$5 == branch && $2 != "" { print $2; exit }')
+  [ -n "$url" ] || die "no Dokploy preview URL found for branch '$branch'"
+  cmd_open "$url"
+}
+
+# Open the preview belonging to one pull request, named by repo rather than by
+# checkout: gh-dash hands its keybindings {{.RepoName}} and {{.PrNumber}} and runs
+# them from wherever it was started, which is rarely the repo being browsed.
+cmd_open_pr() {
+  local slug="$1" pr="${2#\#}" url
+  [ -n "$slug" ] || die "no repo specified (expected <owner>/<repo>)"
+  [ -n "$pr" ] || die "no pull request number specified"
+  url=$(cmd_list "$slug" | awk -F '\t' -v pr="$pr" '$6 == pr && $2 != "" { print $2; exit }')
+  [ -n "$url" ] || die "no Dokploy preview URL found for $slug#$pr"
+  cmd_open "$url"
+}
+
 cmd_copy() {
   local text="$1"
   [ -n "$text" ] || die "nothing to copy"
@@ -475,19 +809,164 @@ cmd_copy() {
   return 0
 }
 
+# The preview segment of the statusLine, or nothing at all. Takes the pull
+# request number Claude Code already knows, which is a sturdier key than the
+# branch: dokploy stores the number itself, whereas a branch has to still be
+# checked out under the name the deployment was created from. The branch is the
+# fallback for running this by hand outside a Claude session.
+#
+# Two rules make this safe to run on every keystroke-driven redraw:
+#
+#   * it never fetches inline. cmd_list falls back to a blocking refresh on a
+#     cold cache, which would freeze the whole status bar behind an http round
+#     trip; here a cold or stale cache only ever kicks off a detached refresh
+#     that lands on a later redraw.
+#   * it prints nothing rather than a reason. Off a branch, outside a repo, with
+#     no preview for this branch — every one of those is a segment the line is
+#     better off without, not a message to read. row_message stays unused.
+statusline_segment() {
+  local pr="${1:-}" branch slug json ttl fields status url host label color text
+  git rev-parse --is-inside-work-tree >/dev/null 2>&1 || return 0
+  branch=$(git symbolic-ref --quiet --short HEAD 2>/dev/null)
+  [ -n "$branch" ] || [ -n "$pr" ] || return 0
+  slug=$(remote_slug 2>/dev/null) || return 0
+
+  json=$(cache_json "$slug")
+
+  # The cache is sorted newest first, so the first match is the live one. Read the
+  # state from the json rather than the pre-rendered tsv column: the tsv is padded
+  # for humans and would have to be re-parsed back out of its glyphs.
+  fields=""
+  [ -s "$json" ] && fields=$(jq -r --arg b "$branch" --arg pr "$pr" '
+    first(.[]?
+          | select(if $pr != "" then ((.pullRequestNumber // "") | tostring) == $pr
+                   else (.branch // "") == $b end))
+    | [ (.previewStatus // "idle"),
+        (.domain
+         | if . == null or (.host // "") == "" then ""
+           else (if .https then "https" else "http" end) + "://" + .host
+                + ((.path // "/") | if . == "/" or . == "" then "" else . end)
+           end),
+        (.domain.host // ""),
+        ((.pullRequestNumber // "") | tostring)
+      ] | join("\u001f")' "$json" 2>/dev/null)
+  # Split on US, not tab: tab counts as IFS whitespace, so bash would fold two
+  # adjacent tabs into one delimiter and shift every field left of an empty one.
+  status=""
+  url=""
+  host=""
+  [ -n "$fields" ] && IFS=$'\037' read -r status url host pr <<<"$fields"
+
+  # Poll fast only while something is actually in flight. A build settles into
+  # done or error and then stops moving, so that state is worth a minute of
+  # cache; running, queued, and "this pull request has no preview cached yet" all
+  # change under us within seconds and are worth re-asking for. The refresh is
+  # spawned after the read, so this render serves the value we just read and the
+  # new one arrives on a later redraw — never a fetch inline.
+  case "$status" in
+  done | error) ttl=${DOKPLOY_STATUSLINE_TTL:-${DOKPLOY_PREVIEWS_TTL:-60}} ;;
+  *) ttl=${DOKPLOY_STATUSLINE_TTL_ACTIVE:-10} ;;
+  esac
+  [ "$(file_age "$json")" -gt "$ttl" ] && spawn_refresh "$slug"
+
+  [ -n "$url" ] || return 0
+
+  case "$status" in
+  done) label="ready" color="32" ;;
+  running) label="building" color="33" ;;
+  error) label="failed" color="31" ;;
+  *) label="queued" color="90" ;;
+  esac
+
+  # These hosts run to 80-odd characters, so the label carries the link and the
+  # url hides behind it; the terminal's own underline is the only affordance the
+  # line can afford. DOKPLOY_STATUSLINE_HOST=1 spells the host out for anyone who
+  # wants to read it, and LINKS=0 covers terminals that print OSC 8 escapes
+  # literally rather than dropping the ones they cannot honour.
+  text=${pr:+PR #$pr }
+  text="🚀 ${text}$label"
+  [ "${DOKPLOY_STATUSLINE_HOST:-0}" = "1" ] && text="$text · $host"
+
+  if [ "${DOKPLOY_STATUSLINE_LINKS:-1}" = "0" ]; then
+    printf '\033[%sm%s\033[0m → %s' "$color" "$text" "$url"
+  else
+    printf '\033]8;;%s\033\\\033[%s;4m%s\033[0m\033]8;;\033\\' \
+      "$url" "$color" "$text"
+  fi
+}
+
+# The whole statusLine, on one row. Claude Code gives a custom status line a row
+# of its own above the built-in one and offers no way to render inside that row,
+# so the only way not to spend an extra row is to take over one that already
+# exists: with statusLine.hideVimModeIndicator set, the `-- INSERT --` row
+# becomes ours and the mode is reprinted here beside the preview.
+cmd_statusline() {
+  local payload dir vim_mode pr seg line
+  payload=""
+  # Claude Code pipes the statusLine command a json blob whose cwd is the
+  # session's directory. That is the worktree whose branch we want, and it is not
+  # necessarily the directory this process was started in, so prefer it when it
+  # is there and fall back to our own cwd when running by hand in a terminal.
+  [ -t 0 ] || payload=$(cat 2>/dev/null)
+
+  dir=""
+  vim_mode=""
+  pr=""
+  if [ -n "$payload" ]; then
+    # US rather than tab, for the same reason as in statusline_segment: vim.mode
+    # is absent whenever vim mode is off, and tab-splitting would slide the pull
+    # request number into its place.
+    IFS=$'\037' read -r dir vim_mode pr <<<"$(printf '%s' "$payload" | jq -r '
+      [ (.workspace.current_dir // .cwd // ""),
+        (.vim.mode // ""),
+        ((.pr.number // "") | tostring)
+      ] | join("\u001f")' 2>/dev/null)"
+  fi
+  if [ -n "$dir" ] && [ -d "$dir" ]; then
+    cd "$dir" 2>/dev/null || return 0
+  fi
+
+  # The payload carries vim.mode only while vim mode is actually on, so this
+  # prints the indicator exactly when the built-in one would have.
+  line=""
+  [ -n "$vim_mode" ] && line=$(printf '\033[2m-- %s --\033[0m' "$vim_mode")
+
+  seg=$(statusline_segment "$pr")
+  [ -n "$seg" ] && line="${line:+$line  }$seg"
+
+  [ -n "$line" ] && printf '%s\n' "$line"
+  return 0
+}
+
 case "${1:-list}" in
 list) cmd_list "${2:-}" ;;
 preview) cmd_preview "${2:-}" ;;
 auth) cmd_auth ;;
 logs) cmd_logs "${2:-}" ;;
 open) cmd_open "${2:-}" ;;
+open-branch) cmd_open_branch "${2:-}" ;;
+open-pr) cmd_open_pr "${2:-}" "${3:-}" ;;
+all) cmd_all ;;
+count) cmd_count "${2:-}" ;;
+watch) cmd_watch "${2:-}" "${3:-}" ;;
+audit) cmd_audit ;;
 copy) cmd_copy "${2:-}" ;;
+statusline) cmd_statusline ;;
 refresh) cmd_refresh "${2:-}" ;;
 _bg-refresh) cmd_bg_refresh "$2" "${3:-}" ;;
 _fetch-previews)
   load_config || die "$CONFIG_ERR"
   cmd_fetch_previews "$2" "$3"
   ;;
--h | --help | help) sed -n '2,35p' "$SELF" | sed 's/^#\( \|$\)//' ;;
+_fetch-app)
+  load_config || die "$CONFIG_ERR"
+  cmd_fetch_app "$2" "$3"
+  ;;
+_fetch-prs) cmd_fetch_prs "$2" "$3" ;;
+# The header block is the help text; read it to the first non-comment line so
+# adding a subcommand above never needs a line range fixed up down here.
+-h | --help | help)
+  awk 'NR > 1 && /^#/ { sub(/^#( |$)/, ""); print; next } NR > 1 { exit }' "$SELF"
+  ;;
 *) die "unknown subcommand: $1 (try --help)" ;;
 esac
