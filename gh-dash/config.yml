@@ -101,6 +101,10 @@ keybindings:
     # Built-in merge, with gh's full interactive prompt, still reachable.
     - key: M
       builtin: merge
+    - key: b
+      name: open dokploy preview in browser
+      command: >-
+        dokploy-previews open-pr '{{.RepoName}}' '{{.PrNumber}}'
 
 repoPaths: {}
 theme:
