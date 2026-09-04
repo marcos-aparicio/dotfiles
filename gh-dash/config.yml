@@ -105,6 +105,10 @@ keybindings:
       name: open dokploy preview in browser
       command: >-
         dokploy-previews open-pr '{{.RepoName}}' '{{.PrNumber}}'
+    - key: D
+      name: convert to draft
+      command: >-
+        gh pr ready --undo -R {{.RepoName}} {{.PrNumber}}
 
 repoPaths: {}
 theme:
