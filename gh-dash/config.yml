@@ -88,10 +88,14 @@ keybindings:
         tmux new-window '
           gh enhance -R {{.RepoName}} {{.PrNumber}}
         '
+    # gh-dash tokenizes with shlex and execs directly -- there is NO shell here,
+    # so `or` / `||` / `&&` become literal argv entries. `--open-if-exists` gives
+    # the open-else-create behaviour in a single process instead.
+    # `--pr` resolves via `gh`, so remote-only and fork branches work too.
     - key: O
-      name: open workmux branch for that pr
+      name: open workmux worktree for that pr
       command: >-
-        workmux open '{{.HeadRefName}}' or workmux add '{{.HeadRefName}}'
+        workmux add --pr {{.PrNumber}} --open-if-exists
     # Overrides the built-in merge: presets merge-commit + delete-branch and
     # only asks the final submit/cancel question.
     - key: m
