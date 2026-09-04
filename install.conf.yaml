@@ -25,6 +25,7 @@
     ~/.thymerc: thyme/thymerc
     ~/.config/starship: starship
     ~/.config/gh-dash: gh-dash
+    ~/.config/tuicr: tuicr
     ~/.config/lf: lf
     ~/.config/sesh: sesh
     ~/.config/ncmpcpp: ncmpcpp

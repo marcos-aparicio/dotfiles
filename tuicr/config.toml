@@ -1,0 +1,14 @@
+# tuicr config — code review TUI
+# Terminal is Ayu Dark (wezterm/colors.lua: bg #0A0E14, fg #B3B1AD).
+# Without an explicit theme tuicr's `appearance = "system"` detection fails
+# under WSL + tmux and falls back to the LIGHT theme: black text on a
+# near-black background. Pin it.
+
+appearance = "dark"
+theme = "ayu-mirage"
+
+# wezterm runs at window_background_opacity = 0.92; let it show through
+# instead of tuicr painting its own opaque #1A1F29 panel background.
+transparent_background = true
+
+no_update_check = true
