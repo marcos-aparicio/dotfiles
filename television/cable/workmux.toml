@@ -5,7 +5,10 @@ requirements = [ "workmux", "jq", "git" ]
 
 [source]
 # command = "workmux list --json | jq -r '.[] | select(.is_main == false) | .handle'"
-command = ["git for-each-ref --format='%(refname:short)' refs/heads/ refs/remotes/","workmux list --json | jq -r '.[].handle'"]
+# --exclude drops refs/remotes/*/HEAD, whose `%(refname:short)` renders as a bare
+# remote name (`origin`). That is not a branch, and picking it used to create a
+# worktree called `origin`.
+command = ["git for-each-ref --format='%(refname:short)' --exclude='refs/remotes/*/HEAD' refs/heads/ refs/remotes/","workmux list --json | jq -r '.[].handle'"]
 
 
 [keybindings]
@@ -14,12 +17,28 @@ ctrl-d = "actions:delete"
 
 [actions.create_branch]
 description = "Creates a branch and opens a workmux worktree there"
-command = "let branch = (input 'Enter branch name: '); workmux add $branch"
+# The `is-not-empty` guard matters: on a bare Enter, `input` returns "" and
+# `workmux add -o ""` would fall back to naming the worktree after the current
+# directory. -o keeps it idempotent if the branch already has a worktree.
+command = "let branch = (input 'Enter branch name: ' | str trim); if ($branch | is-not-empty) { workmux add -o $branch }"
 mode = "execute"
 
 [actions.enter]
 description = "Enter workmux worktree and if it doesn't exist it adds it"
-command = "try { workmux open '{}' } catch { workmux add '{}' }"
+# `add -o` (--open-if-exists) is open-or-create in ONE process, so nothing ever
+# fails and there is no error to catch.
+#
+# Do NOT go back to `try { workmux open '{}' } catch { workmux add '{}' }`. In nu
+# a failing external command makes the catch block's $in the *error record*, and
+# nu spreads that record's fields into `add`'s arguments -- so one Enter on a
+# branch with no worktree created the real worktree plus four junk siblings, one
+# per field of the record:
+#   feat-x
+#   feat-x-msg-external-command-had-a-non-zero-exit-code
+#   feat-x-debug-nonzeroexitcode-exit-code-1-span-span-152519-152526
+#   feat-x-raw-nonzeroexitcode-exit-code-1-span-span-152519-152526
+#   feat-x-rendered-error-nu-shell-non-zero-exit-code
+command = "workmux add -o '{}'"
 mode = "execute"
 
 [actions.delete]
