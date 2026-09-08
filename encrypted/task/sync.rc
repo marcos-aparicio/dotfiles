@@ -1,0 +1,3 @@
+sync.server.url={{TASK_SYNC_URL}}
+sync.server.client_id={{TASK_SYNC_CLIENT_ID}}
+sync.encryption_secret={{TASK_SYNC_SECRET}}

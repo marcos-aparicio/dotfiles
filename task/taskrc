@@ -1,0 +1,36 @@
+# [Created by task 3.5.0 9/5/2026 13:44:23]
+data.location=/home/marcos/.task
+news.version=3.5.0
+
+# To use the default location of the XDG directories,
+# move this configuration file from ~/.taskrc to ~/.config/task/taskrc and update location config as follows:
+
+#data.location=~/.local/share/task
+#hooks.location=~/.config/task/hooks
+
+# Color theme (uncomment one to use)
+include default.theme
+#include light-16.theme
+#include light-256.theme
+#include bubblegum-256.theme
+#include dark-16.theme
+#include dark-256.theme
+#include dark-red-256.theme
+#include dark-green-256.theme
+#include dark-blue-256.theme
+#include dark-violets-256.theme
+#include dark-yellow-green.theme
+#include dark-gray-256.theme
+#include dark-gray-blue-256.theme
+#include solarized-dark-256.theme
+#include solarized-light-256.theme
+#include no-color.theme
+
+# taskchampion sync secrets (server url, client_id, encryption_secret)
+# rendered from encrypted/task/sync.rc via dotbot-age, see edit-secrets
+include /home/marcos/dotfiles/private/task/sync.rc
+
+# taskwarrior-tui user-defined shortcuts
+uda.taskwarrior-tui.shortcuts.1=/home/marcos/.config/taskwarrior-tui/shortcut-scripts/sync.sh
+uda.taskwarrior-tui.background_process=task sync
+uda.taskwarrior-tui.background_process_period=60

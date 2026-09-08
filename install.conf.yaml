@@ -16,6 +16,7 @@
 - link:
     # encrypted
     ~/.ssh/config: private/ssh/config
+    ~/.taskrc: task/taskrc
 
     ~/.config/visidata: visidata
     ~/.xsession: xsession/.xsession
