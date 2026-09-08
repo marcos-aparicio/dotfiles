@@ -46,5 +46,5 @@ if (which zoxide | is-not-empty) {
     zoxide init nushell | save -f ($autoload_dir | path join "zoxide.nu")
 }
 
-use ./modules/aliases.nu *
 use ./modules/functions.nu *
+use ./modules/aliases.nu *

@@ -91,17 +91,6 @@ export def --env load-openai-key [] {
     $env.OPENAI_API_KEY = (pass show personal/api_keys/openai | str trim)
 }
 
-export def --env y [...args: string] {
-    let tmp = (mktemp -t "yazi-cwd.XXXXXX")
-    yazi ...$args --cwd-file $tmp
-    let cwd = (open $tmp | str trim)
-    rm -f -- $tmp
-
-    if ($cwd | is-not-empty) and $cwd != $env.PWD {
-        cd $cwd
-    }
-}
-
 export def to-avif [] {
     mut count = 0
 
@@ -132,4 +121,14 @@ export def weather [] {
     $data | jq -r '.current_condition[0] | "Feels like: \(.FeelsLikeC)°C, Weather: \(.temp_C)°C"'
     print ""
     $data | jq -r '.weather[] | "\(.date): avg temp \(.avgtempC)°C"'
+}
+
+export def --env y [...args] {
+	let tmp = (mktemp -t "yazi-cwd.XXXXXX")
+	^yazi ...$args --cwd-file $tmp
+	let cwd = (open $tmp)
+	if $cwd != $env.PWD and ($cwd | path exists) {
+		cd $cwd
+	}
+	^rm -fp $tmp
 }
