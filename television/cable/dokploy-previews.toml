@@ -68,13 +68,17 @@ description = "Copy the pull request URL to the clipboard"
 command = "dokploy-previews copy '{split:\\t:2}'"
 mode = "fork"
 
-# --pr is the accurate primitive here: it fetches the PR ref through gh, so it
-# works for branches that live on a fork and were never fetched locally. -o
-# makes it open an existing worktree instead of failing. The branch form is a
-# fallback for when gh is unavailable or unauthenticated.
+# The PR-then-branch fallback lives in the script, not in a nu `try {} catch {}`
+# here. tv only substitutes placeholders in an action command it can parse as a
+# template, and a bare `{` starts a placeholder -- so nu's block braces made the
+# whole string parse-fail and reach the shell verbatim: workmux got the literal
+# `{split:\t:5}` as a PR number and then the literal `{split:\t:4}` as a branch
+# name -- which is not even a legal git ref -- so alt-w could only ever fail.
+# Keep this a flat command line. (Braces are only harmless in an action with no
+# placeholders at all, which is why workmux.toml gets away with them.)
 [actions.workmux]
 description = "Open (or create) a workmux worktree for this PR"
-command = "try { workmux add -o --pr '{split:\\t:5}' } catch { workmux add -o '{split:\\t:4}' }"
+command = "dokploy-previews workmux '{split:\\t:5}' '{split:\\t:4}'"
 mode = "execute"
 
 [actions.refresh]

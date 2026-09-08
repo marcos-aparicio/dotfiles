@@ -22,6 +22,11 @@
 #   dokploy-previews open-pr <owner>/<repo> <pr-number>
 #                                      open that pull request's preview URL in the
 #                                      browser, without needing a local checkout
+#   dokploy-previews workmux <pr-number> [<branch>]
+#                                      open (or create) a workmux worktree for
+#                                      that pull request, falling back to the
+#                                      branch when gh cannot resolve the PR.
+#                                      Backs the channel's alt-w action
 #   dokploy-previews all               every preview deployment this API key can
 #                                      see, grouped by repo. One fetch already
 #                                      covers every repo, so this is the cheap
@@ -789,6 +794,35 @@ cmd_open_pr() {
   cmd_open "$url"
 }
 
+# Open (or create) a workmux worktree for one preview's pull request.
+#
+# This lives here rather than inline in the tv action because television skips
+# template substitution for any action command containing `{` or `}` -- nu's
+# block syntax. The channel used to run
+#   try { workmux add -o --pr '{split:\t:5}' } catch { workmux add -o '{split:\t:4}' }
+# and workmux received those braces-and-all -- both halves got the placeholder
+# text instead of the row: `--pr '{split:\t:5}'` is not a PR, and the fallback
+# branch name `{split:\t:4}` is not even a legal git ref, so alt-w could only
+# ever fail. Keeping the action a flat command line keeps the placeholders
+# resolving.
+#
+# --pr is the accurate primitive: it fetches the PR ref through gh, so it works
+# for branches that live on a fork and were never fetched locally. The branch is
+# the fallback for when gh is missing or unauthenticated. -o (--open-if-exists)
+# makes either form open an existing worktree instead of failing.
+cmd_workmux() {
+  local pr="${1#\#}" branch="$2"
+  command -v workmux >/dev/null 2>&1 || die "workmux is not installed"
+  # `workmux add -o ""` falls back to naming the worktree after the current
+  # directory, so the empty row_message row must never reach it.
+  [ -n "$pr" ] || [ -n "$branch" ] || die "this row has no pull request or branch"
+  if [ -n "$pr" ] && workmux add -o --pr "$pr"; then
+    return 0
+  fi
+  [ -n "$branch" ] || die "workmux could not open PR #$pr and the row has no branch"
+  workmux add -o "$branch"
+}
+
 cmd_copy() {
   local text="$1"
   [ -n "$text" ] || die "nothing to copy"
@@ -946,6 +980,7 @@ logs) cmd_logs "${2:-}" ;;
 open) cmd_open "${2:-}" ;;
 open-branch) cmd_open_branch "${2:-}" ;;
 open-pr) cmd_open_pr "${2:-}" "${3:-}" ;;
+workmux) cmd_workmux "${2:-}" "${3:-}" ;;
 all) cmd_all ;;
 count) cmd_count "${2:-}" ;;
 watch) cmd_watch "${2:-}" "${3:-}" ;;
