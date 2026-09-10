@@ -52,6 +52,13 @@
     ~/.config/mpd: mpd
     ~/.config/espanso: espanso
     ~/.config/opencode: opencode
+    # omp (oh-my-pi) — only the hand-written config; the rest of ~/.omp/agent
+    # is state (sessions, sqlite, caches) and stays out of the repo
+    ~/.omp/agent/config.yml: omp/config.yml
+    ~/.omp/agent/keybindings.yml: omp/keybindings.yml
+    ~/.omp/agent/mcp.json: omp/mcp.json
+    ~/.omp/agent/extensions: omp/extensions
+    ~/.omp/agent/skills: omp/skills
     ~/.config/speech-dispatcher: speech-dispatcher
     ~/.config/qutebrowser:
       path: qutebrowser

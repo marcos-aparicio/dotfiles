@@ -1,0 +1,28 @@
+{
+  "mcpServers": {
+    "chrome-devtools": {
+      "type": "stdio",
+      "command": "cmd.exe",
+      "args": [
+        "/c",
+        "npx",
+        "-y",
+        "chrome-devtools-mcp@latest",
+        "--headless=true",
+        "--isolated=true",
+        "--executable-path=C:\\Program Files\\BraveSoftware\\Brave-Browser\\Application\\brave.exe"
+      ]
+    },
+    "bigcommerce-docs": {
+      "type": "http",
+      "url": "https://docs.bigcommerce.com/_mcp/server"
+    },
+    "context-mode": {
+      "type": "stdio",
+      "command": "node",
+      "args": [
+        "/home/marcos/.omp/plugins/node_modules/context-mode/server.bundle.mjs"
+      ]
+    }
+  }
+}

@@ -1,0 +1,17 @@
+modelRoles:
+  default: anthropic/claude-opus-5
+symbolPreset: unicode
+composer:
+  shape: band
+theme:
+  dark: titanium
+  light: light
+setupVersion: 2
+dev:
+  autoqaConsent: granted
+display:
+  smoothStreaming: false
+hideThinkingBlock: true
+defaultThinkingLevel: auto
+tui:
+  hyperlinks: always

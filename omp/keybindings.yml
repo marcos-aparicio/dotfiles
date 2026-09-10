@@ -1,0 +1,6 @@
+app.model.select: ctrl+x
+app.clear: ctrl+shift+l
+app.session.resume: ctrl+r
+app.history.search: []
+app.tools.expand: ctrl+o
+app.session.fork: ctrl+n
