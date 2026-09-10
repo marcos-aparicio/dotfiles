@@ -52,6 +52,16 @@
 #                                      stale the cache may get, HOST=1 spells the
 #                                      host out, LINKS=0 prints the bare url for
 #                                      terminals without OSC 8
+#   dokploy-previews segment [<pr-number>]
+#                                      the preview segment on its own, without
+#                                      the vim-mode half of `statusline`. For
+#                                      status lines that assemble their own row
+#                                      and cannot pipe Claude Code's json — omp
+#                                      renders it as a widget under the
+#                                      composer. The pull request number is
+#                                      optional; without it the checked-out
+#                                      branch is the key, so run it from the
+#                                      worktree
 #
 # Needs DOKPLOY_URL (e.g. https://dokploy.example.com) and DOKPLOY_API_KEY
 # (Dokploy: Settings > API/CLI). Each is resolved on its own, first hit wins:
@@ -972,6 +982,19 @@ cmd_statusline() {
   return 0
 }
 
+# The preview segment alone, for a status line that owns its own row and has no
+# json to pipe in — omp's extension runs this from the session's worktree and
+# renders the line as a widget under the composer, so the cwd and the branch are
+# the whole input. A pull request number may still be passed when the caller
+# knows it, since dokploy keys previews by number and a branch only matches
+# while it is still checked out under the name the deployment was created from.
+cmd_segment() {
+  local seg
+  seg=$(statusline_segment "${1:-}")
+  [ -n "$seg" ] && printf '%s\n' "$seg"
+  return 0
+}
+
 case "${1:-list}" in
 list) cmd_list "${2:-}" ;;
 preview) cmd_preview "${2:-}" ;;
@@ -987,6 +1010,7 @@ watch) cmd_watch "${2:-}" "${3:-}" ;;
 audit) cmd_audit ;;
 copy) cmd_copy "${2:-}" ;;
 statusline) cmd_statusline ;;
+segment) cmd_segment "${2:-}" ;;
 refresh) cmd_refresh "${2:-}" ;;
 _bg-refresh) cmd_bg_refresh "$2" "${3:-}" ;;
 _fetch-previews)
