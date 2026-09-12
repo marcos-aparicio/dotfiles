@@ -77,3 +77,4 @@ if not (which fnm | is-empty) {
 
 use ./modules/functions.nu *
 use ./modules/aliases.nu *
+use ./modules/gtd.nu *
