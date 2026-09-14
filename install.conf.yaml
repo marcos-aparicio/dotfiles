@@ -20,6 +20,15 @@
     ~/.config/visidata: visidata
     ~/.xsession: xsession/.xsession
     ~/.agents: agents
+    # Harness-agnostic agent skills. `agents/skills/*` is the single source of
+    # truth: omp discovers ~/.agents/skills natively, while Claude Code and pi
+    # each want one symlink per skill, so fan the directory out to both.
+    ~/.claude/skills/:
+      path: agents/skills/*
+      glob: true
+    ~/.pi/agent/skills/:
+      path: agents/skills/*
+      glob: true
     ~/.config/workmux: workmux
     ~/.config/wallust: wallust
     ~/.thymerc: thyme/thymerc
