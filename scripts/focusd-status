@@ -1,0 +1,36 @@
+#!/bin/bash
+
+# focusd status for the tmux status line (replaces thyme-custom).
+# Prints the remaining time of the running focusd session:
+#   work running   -> default color
+#   break running  -> green
+#   paused         -> yellow
+# Outputs nothing (module hidden) when focusd has no status to report.
+
+# focusd prints human-readable lines before the JSON; the JSON is the last line
+json=$(focusd status 2>/dev/null | grep '^{')
+[ -n "$json" ] || exit 1
+
+IFS=$'\t' read -r text alt session percentage <<< "$(jq -r '[.text, .alt, .session, .percentage] | @tsv' <<<"$json")"
+[ -n "$text" ] || exit 1
+
+# Remaining time: show seconds only when under a minute, minutes otherwise
+minutes=${text%%:*}
+seconds=${text##*:}
+if [[ "$minutes" =~ ^(00|0)$ ]]; then
+    time_display="${seconds}s"
+else
+    time_display="${minutes}m"
+fi
+
+case "$alt" in
+    *paused*)
+        echo "#[fg=#eed49f]󰍷 $time_display "
+        ;;
+    *break*)
+        echo "#[fg=#a6da95] $time_display "
+        ;;
+    *)
+        echo "#[fg=default] $time_display "
+        ;;
+esac
