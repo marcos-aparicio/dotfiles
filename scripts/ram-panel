@@ -1,0 +1,149 @@
+#!/usr/bin/env bash
+# ram-panel — interactive memory panel for a tmux popup.
+#
+# Shows what is actually happening, ranks your agent sessions by real cost,
+# and lets you act. Nothing is killed without you picking it and confirming.
+#
+# Bound to prefix+G. Quit with q.
+
+set -uo pipefail
+
+C_RESET=$'\033[0m'; C_DIM=$'\033[2m'; C_B=$'\033[1m'
+C_RED=$'\033[31m'; C_YEL=$'\033[33m'; C_GRN=$'\033[32m'; C_CYA=$'\033[36m'
+
+# ---------------------------------------------------------------- state
+read_state() {
+  MEMTOT=$(awk '/^MemTotal/{printf "%d",$2/1024}' /proc/meminfo)
+  AVAIL=$(awk '/^MemAvailable/{printf "%d",$2/1024}' /proc/meminfo)
+  AVAILPCT=$(( 100 * AVAIL / MEMTOT ))
+  SWAPUSED=$(awk '/SwapTotal/{t=$2}/SwapFree/{f=$2} END{printf "%d",(t-f)/1024}' /proc/meminfo)
+  SWAPTOT=$(awk '/SwapTotal/{printf "%d",$2/1024}' /proc/meminfo)
+  SWAPPCT=0; (( SWAPTOT > 0 )) && SWAPPCT=$(( 100 * SWAPUSED / SWAPTOT ))
+  PSI10=$(awk -F'avg10=' '/^full/{split($2,a," ");print a[1]}' /proc/pressure/memory)
+  PSI60=$(awk -F'avg60=' '/^full/{split($2,a," ");print a[1]}' /proc/pressure/memory)
+  # swap-in rate over a 1s window, measured live
+  local p1 p2
+  p1=$(awk '/^pswpin/{print $2}' /proc/vmstat); sleep 1
+  p2=$(awk '/^pswpin/{print $2}' /proc/vmstat)
+  SWAPIN=$(( p2 - p1 ))
+}
+
+verdict() {
+  # Mirrors ram-warn: PSI is the signal that matters, not swap fullness.
+  if awk -v a="$PSI10" 'BEGIN{exit !(a+0>12)}' || (( AVAILPCT < 5 )); then
+    echo "CRIT"
+  elif awk -v a="$PSI10" 'BEGIN{exit !(a+0>5)}' || (( AVAILPCT < 8 )) || (( SWAPIN > 6000 )); then
+    echo "WARN"
+  else echo "OK"; fi
+}
+
+# Agent sessions ranked by whole-subtree RSS. One line per session:
+#   "pid subtree_mb own_mb age_s biggest_child_pid biggest_child_mb child_comm"
+agents() {
+  ps -eo pid=,ppid=,rss=,etimes=,comm= | awk '
+    { pp[$1]=$2; rss[$1]=$3; et[$1]=$4; comm[$1]=$5 }
+    END {
+      for (p in rss) {
+        r=p; h=0
+        while (r != 1 && r != 0 && h < 24) {
+          if (comm[r] ~ /^(claude|opencode)$/) {
+            tot[r] += rss[p]
+            if (p != r && rss[p] > bigrss[r]) { bigrss[r]=rss[p]; bigpid[r]=p; bigcomm[r]=comm[p] }
+            break
+          }
+          r=pp[r]; h++
+        }
+      }
+      for (t in tot)
+        printf "%s %.0f %.0f %s %s %.0f %s\n", t, tot[t]/1024, rss[t]/1024,
+               et[t], (bigpid[t]?bigpid[t]:"-"), bigrss[t]/1024, (bigcomm[t]?bigcomm[t]:"-")
+    }' | sort -k2 -rn
+}
+
+# Which tmux window holds a pid, so you know what you would be closing.
+where() {
+  local pid=$1
+  tmux list-panes -aF '#{session_name}:#{window_index} #{pane_pid}' 2>/dev/null |
+  while read -r loc ppid; do
+    local q=$pid h=0
+    while [[ -n "$q" && "$q" != "1" && "$q" != "0" && $h -lt 24 ]]; do
+      [[ "$q" == "$ppid" ]] && { echo "$loc"; return; }
+      q=$(ps -o ppid= -p "$q" 2>/dev/null | tr -d ' '); h=$((h+1))
+    done
+  done | head -1
+}
+
+draw() {
+  clear
+  read_state
+  local v; v=$(verdict)
+  local col=$C_GRN; [[ "$v" == WARN ]] && col=$C_YEL; [[ "$v" == CRIT ]] && col=$C_RED
+
+  printf "%s%s  MEMORY: %s  %s\n" "$C_B" "$col" "$v" "$C_RESET"
+  printf "  %sRAM%s   %s MB free of %s (%s%%)\n" "$C_DIM" "$C_RESET" "$AVAIL" "$MEMTOT" "$AVAILPCT"
+  printf "  %sswap%s  %s / %s MB (%s%%)   %sswap-in%s %s pages/s\n" \
+    "$C_DIM" "$C_RESET" "$SWAPUSED" "$SWAPTOT" "$SWAPPCT" "$C_DIM" "$C_RESET" "$SWAPIN"
+  printf "  %sstall%s %s%% now, %s%% over 1min   %s(stall is the number that matters)%s\n" \
+    "$C_DIM" "$C_RESET" "$PSI10" "$PSI60" "$C_DIM" "$C_RESET"
+  if (( SWAPPCT > 80 )) && (( SWAPIN < 1000 )); then
+    printf "  %s note: swap is full but nothing is paging in — that is harmless%s\n" "$C_DIM" "$C_RESET"
+  fi
+  echo
+
+  printf "%s  #   session      total    own   age    biggest child%s\n" "$C_B" "$C_RESET"
+  IDX=(); PIDS=(); CHILD=(); CHMB=()
+  local i=0
+  while read -r pid tot own age bpid bmb bcomm; do
+    [[ -z "${pid:-}" ]] && continue
+    i=$((i+1)); IDX+=("$i"); PIDS+=("$pid"); CHILD+=("$bpid"); CHMB+=("$bmb")
+    local loc; loc=$(where "$pid"); loc=${loc:-"(not in tmux)"}
+    local mark="  "; (( tot > 1500 )) && mark="${C_YEL}! ${C_RESET}"
+    printf "%s%s%-2s  %-12s %5sMB %5sMB %4sm   %s %sMB %s\n" \
+      "$mark" "$C_CYA" "$i" "${loc:0:12}" "$tot" "$own" "$((age/60))" \
+      "$bcomm" "$bmb" "$C_RESET"
+  done < <(agents)
+  echo
+  printf "  %s[1-%s]%s kill that session's biggest CHILD (keeps your conversation)\n" "$C_B" "$i" "$C_RESET"
+  printf "  %s[s1-s%s]%s kill the whole SESSION (loses that conversation)\n" "$C_B" "$i" "$C_RESET"
+  printf "  %s[r]%s refresh   %s[h]%s htop   %s[q]%s quit\n" "$C_B" "$C_RESET" "$C_B" "$C_RESET" "$C_B" "$C_RESET"
+}
+
+confirm() {
+  printf "  %s%s%s  type YES to confirm: " "$C_B$C_RED" "$1" "$C_RESET"
+  read -r ans; [[ "$ans" == "YES" ]]
+}
+
+pick() {  # $1 = index -> echoes array position or empty
+  local n=$1
+  (( n >= 1 && n <= ${#PIDS[@]} )) && echo $((n-1))
+}
+
+while true; do
+  draw
+  printf "\n  > "
+  read -r -n 8 cmd; echo
+  case "$cmd" in
+    q|Q|"") exit 0 ;;
+    r|R) continue ;;
+    h|H) htop -s PERCENT_MEM 2>/dev/null || htop ;;
+    s[0-9]*)
+      k=$(pick "${cmd#s}") || true
+      [[ -z "${k:-}" ]] && { echo "  no such entry"; sleep 1; continue; }
+      p=${PIDS[$k]}
+      if confirm "Kill session pid=$p — this DISCARDS that conversation."; then
+        kill -TERM "$p" 2>/dev/null && echo "  sent SIGTERM to $p" || echo "  failed"
+        sleep 2
+      fi ;;
+    [0-9]*)
+      k=$(pick "$cmd") || true
+      [[ -z "${k:-}" ]] && { echo "  no such entry"; sleep 1; continue; }
+      c=${CHILD[$k]}; m=${CHMB[$k]}
+      if [[ "$c" == "-" ]]; then echo "  that session has no child to kill"; sleep 1; continue; fi
+      if confirm "Kill child pid=$c (${m}MB)? Session keeps running."; then
+        kill -TERM "$c" 2>/dev/null; sleep 2
+        kill -0 "$c" 2>/dev/null && kill -KILL "$c" 2>/dev/null
+        echo "  killed $c"; sleep 1
+      fi ;;
+    *) ;;
+  esac
+done

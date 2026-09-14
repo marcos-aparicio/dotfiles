@@ -1,0 +1,45 @@
+#!/usr/bin/env bash
+# omp-capped — omp inside a memory-capped systemd scope.
+#
+# Referenced from ~/.config/workmux/config.yaml as the `omp` agent, so every
+# .workmux.yaml that says `agent: omp` gets the cap without being edited.
+#
+# NOT installed as `omp` on PATH. The previous attempt put a wrapper named
+# `omp` in a directory placed first on PATH; on 2026-09-14 omp's self-updater
+# picked that same directory (installers choose the first writable PATH entry)
+# and overwrote the wrapper with its own 201 MB binary. The cap silently
+# disappeared, a child reached 4941 MB inside a nominal 4 GB ceiling, and it
+# took two resets. A distinct name cannot be clobbered that way.
+#
+# Escape hatch: OMP_NO_CAP=1 omp-capped ...
+
+set -uo pipefail
+REAL="$HOME/.bun/bin/omp"
+
+run_direct() { exec "$REAL" "$@"; }
+
+[[ -x "$REAL" ]] || { echo "omp-capped: $REAL not found or not executable" >&2; exit 127; }
+[[ -n "${OMP_NO_CAP:-}" ]] && run_direct "$@"
+command -v systemd-run >/dev/null 2>&1 || run_direct "$@"
+
+# Only these states mean the user manager genuinely cannot start a scope.
+# "degraded" must NOT disqualify: it only means some unrelated unit failed
+# (pulseaudio here), and scopes work fine. Gating on `is-system-running`
+# exiting 0 was the second bug that left omp uncapped.
+case "$(systemctl --user is-system-running 2>/dev/null)" in
+  offline|unknown|"") run_direct "$@" ;;
+esac
+
+# MemoryMax only. No MemoryHigh: ~80% of an agent's memory is anonymous and can
+# only be reclaimed to swap, so with swap kept deliberately small it would
+# throttle without freeing anything and the agent would crawl instead of
+# failing cleanly. No MemorySwapMax either -- a second wall adds no headroom.
+#
+# The cap covers omp AND its children, which is the point: the headless browser
+# that caused the crashes is a child. The kernel OOM-kills the largest process
+# in the cgroup, i.e. the browser, so the agent session itself survives.
+exec systemd-run --user --scope --collect -q \
+  --description "omp agent (capped)" \
+  -p MemoryMax=4G \
+  -p CPUWeight=20 \
+  -- "$REAL" "$@"

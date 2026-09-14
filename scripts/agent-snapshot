@@ -1,0 +1,125 @@
+#!/usr/bin/env bash
+# agent-snapshot — record exactly which agent sessions are live, so a cold start
+# can resume the CONVERSATIONS, not just reopen shells in the right folders.
+#
+#   agent-snapshot            write a snapshot now
+#   agent-snapshot --show     print the newest snapshot
+#   agent-snapshot --restore  emit the commands to bring it all back (dry run)
+#   agent-snapshot --restore --yes   actually recreate the tmux windows
+#
+# Why this rather than `workmux resurrect`: workmux records the WORKTREE that
+# had an agent, which is enough to reopen a window but not to get the
+# conversation back. Here the session id is read from /proc/<pid>/fd -- the
+# agent literally has its own .jsonl open -- so it is exact rather than a guess
+# at "newest file in that directory", which goes wrong whenever two sessions
+# ran in one worktree.
+
+set -uo pipefail
+
+DIR="${AGENT_SNAPSHOT_DIR:-$HOME/.local/state/agent-snapshots}"
+mkdir -p "$DIR"
+CUR="$DIR/latest.tsv"
+
+collect() {
+  # tmux pane_pid -> pane location, so a snapshot row knows where it lived.
+  declare -A LOC
+  while read -r ppid sess win pane; do
+    LOC["$ppid"]="$sess|$win|$pane"
+  done < <(tmux list-panes -a -F '#{pane_pid} #{session_name} #{window_index} #{pane_index}' 2>/dev/null)
+
+  for pid in $(pgrep -x omp; pgrep -x claude; pgrep -x pi); do
+    local comm cwd sf sid loc anc
+    comm=$(ps -o comm= -p "$pid" 2>/dev/null | tr -d ' ')
+    cwd=$(readlink "/proc/$pid/cwd" 2>/dev/null)
+    [[ -z "$cwd" ]] && continue
+
+    # The open .jsonl IS the session. Filter to files whose name carries a
+    # session id; omp also opens helper logs like Task9ChatNotify.jsonl for
+    # subagents, which are not resumable sessions.
+    # Match the BASENAME, not the whole path: subagent logs such as
+    # Task9ChatNotify.jsonl live inside a session directory whose own name
+    # contains the id, so a path-wide match lets them through.
+    sf=$(ls -l "/proc/$pid/fd" 2>/dev/null \
+         | grep -oE '/[^ ]*/(sessions|projects)/[^ ]*\.jsonl' \
+         | while read -r f; do
+             b=$(basename "$f")
+             [[ "$b" =~ [0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.jsonl$ ]] && echo "$f"
+           done | head -1)
+    [[ -z "$sf" ]] && continue
+
+    case "$comm" in
+      omp|pi)  sid=$(basename "$sf" .jsonl | sed 's/^[0-9T:.Z-]*_//') ;;
+      claude)  sid=$(basename "$sf" .jsonl) ;;
+      *) continue ;;
+    esac
+
+    # Walk up to the tmux pane that owns this agent.
+    loc=""; anc=$pid
+    for _ in $(seq 1 12); do
+      [[ -n "${LOC[$anc]:-}" ]] && { loc="${LOC[$anc]}"; break; }
+      anc=$(ps -o ppid= -p "$anc" 2>/dev/null | tr -d ' ')
+      [[ -z "$anc" || "$anc" == "1" ]] && break
+    done
+
+    printf '%s\t%s\t%s\t%s\n' "$comm" "$cwd" "$sid" "${loc:-?|?|?}"
+  done
+}
+
+case "${1:-}" in
+  --show)
+    [[ -f "$CUR" ]] || { echo "no snapshot yet"; exit 0; }
+    echo "snapshot from $(date -r "$CUR" '+%Y-%m-%d %H:%M:%S')"
+    awk -F'\t' '{split($4,l,"|"); printf "  %-7s %-52s %s  [%s]\n",$1,$2,substr($3,1,13),l[1]}' "$CUR"
+    ;;
+  --restore)
+    [[ -f "$CUR" ]] || { echo "no snapshot to restore"; exit 1; }
+    yes=0; [[ "${2:-}" == "--yes" ]] && yes=1
+    echo "# from snapshot $(date -r "$CUR" '+%Y-%m-%d %H:%M:%S')"
+    while IFS=$'\t' read -r comm cwd sid loc; do
+      [[ -d "$cwd" ]] || { echo "# SKIP (gone): $cwd"; continue; }
+      sess="${loc%%|*}"
+      case "$comm" in
+        omp|pi) cmd="$comm --resume $sid" ;;
+        claude) cmd="claude --resume $sid" ;;
+        *) continue ;;
+      esac
+      win=$(basename "$cwd" | cut -c1-18)
+      if (( yes )); then
+        # After a cold start the recorded tmux session does not exist yet, and
+        # `new-window -t <missing>` fails with "can't find window". Create the
+        # session first (which also opens its first window), otherwise fall
+        # back to adding a window to it.
+        if [[ -n "$sess" && "$sess" != "?" ]]; then
+          if tmux has-session -t "$sess" 2>/dev/null; then
+            tmux new-window -d -t "$sess" -c "$cwd" -n "$win" "$cmd" 2>/dev/null
+          else
+            tmux new-session -d -s "$sess" -c "$cwd" -n "$win" "$cmd" 2>/dev/null
+          fi
+        else
+          tmux new-window -d -c "$cwd" -n "$win" "$cmd" 2>/dev/null
+        fi
+        (( $? == 0 )) && echo "restored: $sess -> $cwd ($comm)" \
+                      || echo "FAILED:   $sess -> $cwd ($comm)"
+      else
+        if [[ -n "$sess" && "$sess" != "?" ]]; then
+          echo "tmux has-session -t '$sess' 2>/dev/null && tmux new-window -d -t '$sess' -c '$cwd' -n '$win' '$cmd' || tmux new-session -d -s '$sess' -c '$cwd' -n '$win' '$cmd'"
+        else
+          echo "tmux new-window -d -c '$cwd' -n '$win' '$cmd'"
+        fi
+      fi
+    done < "$CUR"
+    (( yes )) || echo "# add --yes to run these"
+    ;;
+  *)
+    n=$(collect | tee "$CUR.tmp" | wc -l)
+    if (( n > 0 )); then
+      mv "$CUR.tmp" "$CUR"
+      cp "$CUR" "$DIR/$(date +%Y%m%d-%H%M%S).tsv"
+      # keep a fortnight of history, discard the rest
+      ls -1t "$DIR"/2*.tsv 2>/dev/null | tail -n +200 | xargs -r rm -f
+    else
+      rm -f "$CUR.tmp"   # never overwrite a good snapshot with an empty one
+    fi
+    echo "$n agent session(s) recorded"
+    ;;
+esac

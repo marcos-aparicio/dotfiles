@@ -2,6 +2,9 @@ nerdfont: true
 mode: "session"
 merge_keep: false
 agents:
+  # `agent: omp` in any .workmux.yaml resolves to this entry, so every worktree
+  # gets the 4 GB cap without editing a single project file.
+  omp: "~/.local/scripts/omp-capped"
   cc-work: "claude"
   cc-personal: "env CLAUDE_CONFIG_DIR=~/.claude-personal claude"
   cod: "codex --yolo"

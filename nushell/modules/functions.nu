@@ -132,3 +132,61 @@ export def --env y [...args] {
 	}
 	^rm -fp $tmp
 }
+
+# --- agent memory smoothing -------------------------------------------------
+# Goal: trade a little agent speed for a machine that stays usable. Neither of
+# these caps the heap, so neither can kill a session -- they only make garbage
+# collection run more often, in smaller increments, instead of letting memory
+# pile up into one big spike.
+#
+# Deliberately NOT used here: --max-old-space-size (node) sets a hard V8 wall
+# and hitting it hard-aborts with SIGABRT (verified: exit code 134, the catch
+# block never runs), which would lose the conversation.
+
+# pi runs on node, so V8's GC flags apply.
+# --max-semi-space-size enlarges the young generation: short-lived garbage gets
+# collected in frequent cheap minor GCs rather than being promoted and dealt
+# with in one expensive major GC.
+export def --wrapped pi [...args] {
+    with-env { NODE_OPTIONS: "--max-semi-space-size=64" } { ^pi ...$args }
+}
+
+# omp runs on bun/JavaScriptCore, where V8 flags are silently ignored. Bun's
+# equivalent is --smol, which makes its GC run more frequently. It must be
+# passed to the bun runtime (before the script), not to omp's own arg parser --
+# omp already has its own unrelated --smol flag for model selection.
+
+# --- SCOPED variants, for testing --------------------------------------------
+# Same agents, but launched inside a transient systemd cgroup so the agent AND
+# every child it spawns share one memory ceiling. When the group exceeds it the
+# kernel kills its LARGEST process -- verified to be the runaway child, not the
+# agent (dmesg: "Killed process ... (python3)" while the parent survived).
+#
+# Separate names on purpose: these are unproven for interactive TUIs. If the
+# terminal misbehaves, plain `omp` / `pi` are untouched.
+#
+# IOWeight is deliberately absent -- the io controller is not delegated to
+# user.slice on this box (subtree_control shows "cpu memory pids"), so it would
+# be silently ignored.
+#
+# MemorySwapMax=512M rather than 0: leaves a little give before the hard kill.
+
+
+export def --wrapped pic [...args] {
+    with-env { NODE_OPTIONS: "--max-semi-space-size=64" } {
+        ^systemd-run --user --scope --collect -q --description "pic agent" "-p" "MemoryMax=4G" "-p" "MemorySwapMax=512M" "-p" "CPUWeight=20" -- pi ...$args
+    }
+}
+
+# Typing `omp` interactively runs the memory-capped version.
+#
+# A nushell def is safe here, unlike the earlier PATH-shadowing attempt: omp's
+# self-updater installs into the first writable directory on PATH, and on
+# 2026-09-14 it overwrote a wrapper script that lived there. A def is not a file
+# on PATH, so nothing can install over it.
+#
+# workmux does not need this -- it resolves `agent: omp` through the agents map
+# in ~/.config/workmux/config.yaml, which already points at omp-capped.
+#
+# OMP_NO_CAP=1 omp ...   runs it uncapped (omp-capped honours the variable).
+export def --wrapped omp [...args] { ^omp-capped ...$args }

@@ -1,0 +1,310 @@
+#!/usr/bin/env bash
+# ram-guard — graded backstop so a warning never becomes a system crash.
+#
+#   ram-guard                      dry run: show what it WOULD do
+#   ram-guard --yes                act (tiers 1-2 only; sessions never killed)
+#   ram-guard --yes --allow-session-kill   also permit tier 3 (last resort)
+#
+# ESCALATION — least destructive first. It stops as soon as pressure clears.
+#
+#   Tier 1  reclaim, don't kill.  Writes memory.reclaim on the biggest agent's
+#           own cgroup. Pushes its cold pages out. NOTHING DIES.
+#   Tier 2  kill the runaway COMMAND, not the session. Biggest non-agent
+#           descendant of an agent (the runaway grep/build/test). You lose one
+#           tool call; the conversation survives.
+#   Tier 3  (opt-in, off by default) kill the biggest IDLE agent session.
+#           Never the session you are attached to.
+#
+# Why not earlyoom: it kills the largest process, which here is your claude
+# session, losing the conversation. This kills the child that caused the spike.
+#
+# Requires SUSTAINED crit (CRIT_STREAK consecutive samples), so a brief spike
+# never triggers it.
+
+set -uo pipefail
+
+DRY=1; ALLOW_SESSION=0; DAEMON=0
+for a in "$@"; do
+  case "$a" in
+    --yes) DRY=0 ;;
+    # Loop mode. Cron's one-minute granularity makes sub-minute response
+    # impossible; this samples every FAST_INTERVAL seconds instead.
+    --daemon) DAEMON=1 ;;
+    --allow-session-kill) ALLOW_SESSION=1 ;;
+    -h|--help) sed -n '2,26p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+  esac
+done
+
+STATE="${RAM_GUARD_STATE:-$HOME/.local/state/ram-guard.state}"
+LOG="$HOME/.local/state/ram-guard.log"
+mkdir -p "$(dirname "$STATE")"
+
+# TRIGGER CALIBRATED FROM REAL INCIDENTS (1207 samples, Sep 8-11).
+#
+# swap==100% is the universal signature: it appears in EVERY CRIT sample. But
+# firing on it immediately would mean 8 interventions to prevent 1 disaster,
+# because most swap-exhaustion episodes clear by themselves. Measured durations
+# at swap>=99%:
+#
+#     1 min  Sep 8 15:45     1 min  Sep 10 16:29
+#     1 min  Sep 8 17:11     1 min  Sep 10 16:38
+#     2 min  Sep 9 13:54     6 min  Sep 11 10:45
+#     2 min  Sep 9 14:41    33 min  Sep 9  13:11   <- needed a reboot
+#
+# So DURATION is the discriminator, not level. Four consecutive minutes fires
+# on the 33-min and 6-min episodes and ignores all six 1-2 min blips.
+#
+# Why swap exhaustion is the right thing to watch: once swap is full, anonymous
+# memory cannot be evicted, so reclaim falls entirely on file pages -- it
+# evicts the running binaries, which are needed again immediately. Refaults
+# measured at 279,729/s average during the 33-min episode, load reached 167 on
+# 6 cores. There is no recovery path from that without killing something.
+SWAPFULL_PCT=99        # percent of total swap (zram + disk)
+SWAP_STREAK=${RAM_GUARD_STREAK:-4}   # consecutive samples before acting
+# On 2026-09-11 the guard killed two runaways successfully, then a single OK
+# sample at 14:27 reset the streak to zero. Rebuilding it took five minutes
+# (cron ran late because the machine was thrashing), by which point avail was
+# 74 MB and load 141. So: DECAY the streak instead of resetting it, and act
+# immediately when the situation is already severe regardless of streak.
+EMERGENCY_AVAIL_MB=600 # below this, act now -- no streak required
+
+# Fast mode (--daemon). Tuned for recovery in under a minute rather than for
+# avoiding unnecessary kills: it WILL act on the short episodes that used to
+# clear by themselves in 1-6 minutes. That is the intended trade -- roughly two
+# extra killed children per day, in exchange for the machine never staying slow
+# for more than ~20 seconds.
+FAST_INTERVAL=10       # seconds between samples
+FAST_STREAK=2          # samples above threshold before acting => ~20s response
+REFAULT_CONFIRM=50000  # /s -- corroborates that thrashing is actually underway
+TIER2_MIN_MB=400       # never kill a child smaller than this
+TIER3_IDLE_SEC=900
+
+log(){ printf '%s %s\n' "$(date -Iseconds)" "$*" >>"$LOG"; }
+say(){ printf '%s\n' "$*"; }
+
+# ---------------------------------------------------------------- sample
+sample() {
+  AVAIL=$(awk '/^MemAvailable/{printf "%d",$2/1024}' /proc/meminfo)
+  SWAPPCT=$(awk '/SwapTotal/{t=$2}/SwapFree/{f=$2} END{if(t>0)printf "%d",100*(t-f)/t; else print 0}' /proc/meminfo)
+  SWAPUSED=$(awk '/SwapTotal/{t=$2}/SwapFree/{f=$2} END{printf "%d",(t-f)/1024}' /proc/meminfo)
+  PSI_FULL=$(awk -F'avg10=' '/^full/{split($2,a," ");print a[1]}' /proc/pressure/memory)
+  LOAD=$(cut -d' ' -f1 /proc/loadavg)
+  local rf now
+  rf=$(awk '/^workingset_refault_file/{print $2}' /proc/vmstat); now=$(date +%s)
+  local pt=0 prf=0 st=0
+  [[ -r "$STATE" ]] && read -r pt prf st < "$STATE" 2>/dev/null || true
+  : "${pt:=0}" "${prf:=0}" "${st:=0}"
+  local dt=$((now-pt))
+  if (( pt>0 && dt>0 && dt<3600 && prf>0 && rf>=prf )); then
+    REFAULT=$(( (rf-prf)/dt ))
+  else REFAULT=-1; fi
+  PREV_STREAK=$st; CUR_RF=$rf; CUR_T=$now
+}
+
+# Swap exhausted is the condition. Refaults corroborate but are not required on
+# their own: a refault storm without swap exhaustion has a recovery path.
+is_crit() { (( SWAPPCT >= SWAPFULL_PCT )); }
+
+# ------------------------------------------------- never-touch protections
+# The pane you are actually attached to, and its whole tree.
+protected_pids() {
+  local out=" 1 " sess pane
+  # Only sessions with an attached client count as "in use".
+  while read -r sess; do
+    [[ -z "$sess" ]] && continue
+    pane=$(tmux list-panes -t "$sess" -F '#{pane_active} #{pane_pid}' 2>/dev/null | awk '$1==1{print $2}')
+    for pp in $pane; do
+      out+="$(pstree_pids "$pp") "
+    done
+  done < <(tmux list-clients -F '#{client_session}' 2>/dev/null | sort -u)
+  # tmux server itself and any terminal plumbing
+  out+="$(ps -eo pid=,comm= | awk '$2 ~ /^(tmux|Relay|SessionLeader|systemd|init)/{printf "%s ",$1}') "
+  echo "$out"
+}
+pstree_pids() {
+  local root=$1
+  ps -eo pid=,ppid= | awk -v r="$root" '
+    {pp[$1]=$2; all[NR]=$1; n=NR}
+    END{ for(i=1;i<=n;i++){ p=all[i]; q=p; h=0
+           while(q!=0 && q!=1 && h<24){ if(q==r){printf "%s ",p; break} q=pp[q]; h++ } }
+         printf "%s ", r }'
+}
+
+# ------------------------------------------------------------- tier targets
+# -> "pid rss_mb cgroup_path".  Sums each agent's whole subtree in one awk pass;
+# the earlier /proc/*/statm version silently produced nothing.
+biggest_agent_scope() {
+  local best bpid cg
+  read -r bpid best < <(ps -eo pid=,ppid=,rss=,comm= | awk '
+    { pp[$1]=$2; rss[$1]=$3; comm[$1]=$4 }
+    END {
+      for (p in rss) {
+        r=p; h=0
+        while (r != 1 && r != 0 && h < 24) {
+          if (comm[r] ~ /^(claude|opencode|omp|pi|nvim)$/) { tot[r] += rss[p]; break }
+          r=pp[r]; h++ }
+      }
+      b=0
+      for (t in tot) if (tot[t] > b) { b=tot[t]; bt=t }
+      if (b > 0) printf "%s %.0f\n", bt, b/1024      # trailing \n matters: read
+    }')                                              # returns false without it
+  [[ -z "${bpid:-}" ]] && return 1
+  cg=$(cut -d: -f3 /proc/"$bpid"/cgroup 2>/dev/null)
+  [[ -z "$cg" ]] && return 1
+  echo "$bpid $best $cg"
+}
+
+biggest_tool_child() {    # -> "pid rss_mb comm owner_pid"
+  ps -eo pid=,ppid=,rss=,comm= | awk -v min="$((TIER2_MIN_MB*1024))" '
+    { pp[$1]=$2; rss[$1]=$3; comm[$1]=$4 }
+    END {
+      best=0
+      for (p in rss) {
+        if (comm[p] ~ /^(claude|opencode|omp|pi|nvim)$/) continue
+        if (rss[p] < min) continue
+        r=pp[p]; h=0
+        while (r != 1 && r != 0 && h < 24) {
+          if (comm[r] ~ /^(claude|opencode|omp|pi|nvim)$/) {
+            if (rss[p] > best) { best=rss[p]; bp=p; bo=r }
+            break }
+          r=pp[r]; h++ }
+      }
+      # Trailing \n is required: `read` returns non-zero at EOF without one,
+      # so `if read ...` took the else branch and reported "no child found".
+      if (best>0) printf "%s %.0f %s %s\n", bp, best/1024, comm[bp], bo
+    }'
+}
+
+# --------------------------------------------------------------------- daemon
+# Appended last so it can re-invoke this script's single-shot path. Keeping the
+# loop outside the decision logic means both modes share exactly one code path.
+if (( DAEMON == 1 )); then
+  exec 9>"$HOME/.local/state/ram-guard.lock"
+  flock -n 9 || { echo "another ram-guard --daemon is already running"; exit 0; }
+  # Env, not shell vars: the loop re-invokes this script, so the child needs
+  # its own streak value and its own state file (the cron copy, if still
+  # installed, must not share state with the daemon).
+  export RAM_GUARD_STREAK="$FAST_STREAK"
+  export RAM_GUARD_STATE="$HOME/.local/state/ram-guard-daemon.state"
+  log "daemon start interval=${FAST_INTERVAL}s streak=${FAST_STREAK} dry=${DRY}"
+  trap 'log "daemon stop"; exit 0' TERM INT
+  while true; do
+    if (( DRY == 0 )); then "$0" --yes >/dev/null 2>&1; else "$0" >/dev/null 2>&1; fi
+    sleep "$FAST_INTERVAL"
+  done
+fi
+
+# ------------------------------------------------------------------- main
+sample
+streak=0
+if is_crit; then
+  streak=$(( PREV_STREAK + 1 ))
+else
+  # Decay, do not reset: a one-minute dip during an ongoing incident should not
+  # buy the runaway four more minutes of immunity.
+  streak=$(( PREV_STREAK > 0 ? PREV_STREAK - 1 : 0 ))
+fi
+# Severity override: memory this low means the refault spiral is already
+# running and waiting out a streak just donates minutes to it.
+EMERGENCY=0
+(( AVAIL < EMERGENCY_AVAIL_MB )) && (( SWAPPCT >= SWAPFULL_PCT )) && EMERGENCY=1
+printf '%s %s %s\n' "$CUR_T" "$CUR_RF" "$streak" > "$STATE"
+
+status="swap=${SWAPPCT}% (${SWAPUSED}MB) avail=${AVAIL}MB refault=${REFAULT}/s psi_full=${PSI_FULL} load=${LOAD} streak=${streak}/${SWAP_STREAK}"
+
+if ! is_crit; then
+  say "OK — $status"; log "ok $status"; exit 0
+fi
+if (( EMERGENCY == 1 )) && (( streak > 0 )); then
+  say "EMERGENCY — avail ${AVAIL}MB with swap ${SWAPPCT}%; acting without waiting for the streak"
+  log "emergency avail=${AVAIL} swap=${SWAPPCT}% streak=${streak}"
+elif (( streak < SWAP_STREAK )); then
+  say "swap exhausted but not sustained — $status (acting at ${SWAP_STREAK})"
+  log "crit-unsustained $status"; exit 0
+fi
+
+say "CRIT SUSTAINED — $status"
+log "crit-sustained $status"
+PROT=" $(protected_pids) "
+
+# ---- Tier 1: reclaim (nothing dies) ----
+#
+# SKIP IT WHEN SWAP IS ALREADY FILLING. Reclaim frees file cache but can only
+# move ANONYMOUS memory (~80% of a Claude session) to swap. Measured during a
+# real meltdown: swap 7.75/8 GB with PSI full avg10=15.68. Reclaiming there
+# pushes more into an almost-full swap and makes the thrash worse, not better.
+# Only worth doing while there is real swap headroom.
+# Also skip while actively thrashing, not just when swap is full: observed a
+# real meltdown at only 33% swap but 23,880 pages/s of swap-in. If pages are
+# already streaming back in, adding more writes is strictly harmful.
+if (( SWAPPCT > 40 )); then
+  say "[tier1] SKIPPED — swap ${SWAPPCT}% full; reclaim needs swap to push anon into, and there is none"
+  log "tier1 skipped swap=${SWAPPCT}%"
+elif read -r apid amb acg < <(biggest_agent_scope); then
+  say "[tier1] biggest agent: pid=$apid ${amb}MB  cgroup=${acg##*/}"
+  rfile="/sys/fs/cgroup${acg}/memory.reclaim"
+  if [[ "$acg" == "/init.scope" || ! -w "$rfile" ]]; then
+    say "        reclaim unavailable here (${acg}) — skipping to tier 2"
+  else
+    want=$(( amb / 4 ))
+    if (( DRY )); then say "        WOULD reclaim ${want}M from ${acg##*/}"
+    else
+      if echo "${want}M" > "$rfile" 2>/dev/null; then
+        say "        reclaimed ${want}M (no process killed)"; log "tier1 reclaim ${want}M $acg"
+        sleep 2; sample
+        is_crit || { say "        pressure cleared — done"; log "tier1 resolved"; exit 0; }
+        say "        still critical, escalating"
+      else say "        reclaim write failed — escalating"; fi
+    fi
+  fi
+fi
+
+# ---- Tier 2: kill the runaway COMMAND, not the session ----
+if read -r cpid cmb ccomm cowner < <(biggest_tool_child); then
+  if [[ "$PROT" == *" $cpid "* ]]; then
+    say "[tier2] SKIP pid=$cpid — protected (attached pane / tmux)"
+  else
+    say "[tier2] runaway child: pid=$cpid ${cmb}MB $ccomm (under agent pid=$cowner)"
+    if (( DRY )); then say "        WOULD kill $cpid — session pid=$cowner survives"
+    else
+      kill -TERM "$cpid" 2>/dev/null; sleep 3
+      kill -0 "$cpid" 2>/dev/null && kill -KILL "$cpid" 2>/dev/null
+      say "        killed $cpid; agent pid=$cowner untouched"; log "tier2 kill $cpid ${cmb}MB $ccomm"
+      sleep 2; sample
+      is_crit || { say "        pressure cleared — done"; log "tier2 resolved"; exit 0; }
+    fi
+  fi
+else
+  say "[tier2] no tool child over ${TIER2_MIN_MB}MB to kill"
+fi
+
+# ---- Tier 3: last resort, opt-in, never the attached session ----
+if (( ! ALLOW_SESSION )); then
+  say "[tier3] DISABLED (pass --allow-session-kill to permit). Stopping here."
+  say "        still critical: $status — close a session manually"
+  log "tier3 disabled, still crit"
+  exit 2
+fi
+cand=""
+for p in $(pgrep -x claude); do
+  [[ "$PROT" == *" $p "* ]] && continue
+  idle=$(ps -o etimes= -p "$p" 2>/dev/null | tr -d ' ')
+  # crude idleness: no CPU time accumulated recently
+  ct=$(awk '{print $14+$15}' /proc/"$p"/stat 2>/dev/null)
+  (( ${idle:-0} < TIER3_IDLE_SEC )) && continue
+  rs=$(ps -o rss= -p "$p" 2>/dev/null | tr -d ' ')
+  cand+="$rs $p"$'\n'
+done
+top=$(sed '/^$/d' <<<"$cand" | sort -rn | head -1)
+if [[ -z "$top" ]]; then
+  say "[tier3] no eligible idle session (all attached or too new) — stopping"
+  log "tier3 no-candidate"; exit 2
+fi
+tp=$(awk '{print $2}' <<<"$top"); tm=$(awk '{printf "%.0f",$1/1024}' <<<"$top")
+say "[tier3] idle session pid=$tp ${tm}MB"
+if (( DRY )); then say "        WOULD kill session $tp (YOU WOULD LOSE THAT CONVERSATION)"
+else
+  kill -TERM "$tp" 2>/dev/null; say "        sent SIGTERM to $tp"; log "tier3 kill $tp ${tm}MB"
+fi
+exit 0
+

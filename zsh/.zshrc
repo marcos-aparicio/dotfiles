@@ -44,3 +44,15 @@ case ":$PATH:" in
   *) export PATH="$PNPM_HOME:$PATH" ;;
 esac
 # pnpm end
+
+# Vite+ bin (https://viteplus.dev)
+. "$HOME/.vite-plus/env"
+
+export USERPROFILE=$(wslpath -u $(powershell.exe -NoLogo -NoProfile -Command 'Write-Output ${env:USERPROFILE}'))
+
+# Typing `omp` runs the memory-capped version (4 GB ceiling on omp and its
+# children, including the headless browser that caused the Sep 11/14 crashes).
+# A function, not a PATH wrapper: omp's self-updater installs into the first
+# writable PATH entry and overwrote a wrapper script there on 2026-09-14.
+# OMP_NO_CAP=1 omp ... runs it uncapped.
+omp() { command omp-capped "$@"; }

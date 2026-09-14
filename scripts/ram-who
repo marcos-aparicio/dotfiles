@@ -1,0 +1,60 @@
+#!/usr/bin/env bash
+# ram-who — per-process companion to ram-log.csv
+#
+# ram-log.csv answers "how full was RAM". This answers "who was holding it",
+# and flags orphaned (ppid==1) AI-runtime processes so leftovers are provable
+# rather than argued about.
+#
+# Appends one line per sample. Run from cron/systemd every 60s:
+#   * * * * * /home/marcos/.local/scripts/ram-who
+#
+# Columns: ts, pct_used, total_rss_mb, claude_n, claude_mb, mcp_n, mcp_mb,
+#          orphan_n, orphan_mb, top3, orphan_detail
+
+set -uo pipefail
+
+OUT="${RAM_WHO_LOG:-/home/marcos/Projects/research/ram-log/ram-who.csv}"
+mkdir -p "$(dirname "$OUT")"
+
+if [[ ! -s "$OUT" ]]; then
+  echo "ts,pct_used,total_rss_mb,claude_n,claude_mb,mcp_n,mcp_mb,orphan_n,orphan_mb,top3,orphan_detail" >"$OUT"
+fi
+
+ts=$(date -Iseconds)
+
+# Match ram-log.csv's metric: fraction of total RAM in use (MemTotal - MemAvailable).
+pct=$(awk '/^MemTotal:/{t=$2} /^MemAvailable:/{a=$2} END{printf "%.4f", (t-a)/t}' /proc/meminfo)
+
+snap=$(ps -eo pid=,ppid=,rss=,comm=,args= 2>/dev/null)
+
+read -r total_rss <<<"$(awk '{s+=$3} END{printf "%.0f", s/1024}' <<<"$snap")"
+
+# Claude Code sessions.
+read -r cn cmb <<<"$(awk '$4=="claude"{n++; s+=$3} END{printf "%d %.0f", n+0, s/1024}' <<<"$snap")"
+
+# MCP servers / language servers: children of a claude process.
+claude_pids=$(awk '$4=="claude"{print $1}' <<<"$snap" | paste -sd'|' -)
+if [[ -n "$claude_pids" ]]; then
+  read -r mn mmb <<<"$(awk -v p="^($claude_pids)$" '$2 ~ p {n++; s+=$3} END{printf "%d %.0f", n+0, s/1024}' <<<"$snap")"
+else
+  mn=0; mmb=0
+fi
+
+# Orphans: ppid==1 and an AI-runtime shape. These are the ones that hold RSS
+# with no live parent — i.e. what a reaper like zclean would target.
+orphans=$(awk '$2==1' <<<"$snap" \
+  | grep -aiE 'claude|mcp-|mcp_|language-server|lsp|[[:space:]]bun[[:space:]]|node .*(mcp|server)' \
+  | grep -avE 'snapfuse|systemd|dockerd' || true)
+
+if [[ -n "$orphans" ]]; then
+  read -r on omb <<<"$(awk '{n++; s+=$3} END{printf "%d %.0f", n+0, s/1024}' <<<"$orphans")"
+  odetail=$(awk '{printf "%s:%s:%.0fMB ", $1, $4, $3/1024}' <<<"$orphans" | sed 's/ $//')
+else
+  on=0; omb=0; odetail=""
+fi
+
+top3=$(awk '{a[$4]+=$3} END{for (k in a) printf "%.0f %s\n", a[k]/1024, k}' <<<"$snap" \
+  | sort -rn | head -3 | awk '{printf "%s=%sMB ", $2, $1}' | sed 's/ $//')
+
+printf '%s,%s,%s,%s,%s,%s,%s,%s,%s,"%s","%s"\n' \
+  "$ts" "$pct" "$total_rss" "$cn" "$cmb" "$mn" "$mmb" "$on" "$omb" "$top3" "$odetail" >>"$OUT"

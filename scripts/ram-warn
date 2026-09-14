@@ -1,0 +1,243 @@
+#!/usr/bin/env bash
+# ram-warn — early warning BEFORE the lag starts.
+#
+#   ram-warn --tmux     compact indicator for tmux status-right (silent when OK)
+#   ram-warn --check    for cron/timer: alerts via tmux on escalation, logs always
+#   ram-warn            human-readable one-shot report
+#
+# WHY THESE SIGNALS
+#
+# RAM percent is a LAGGING indicator on this machine — it sits at ~92% all day
+# and everything is fine. Measured baselines (quiet) vs. observed under lag:
+#
+#                     quiet      during lag
+#   swap-in rate      25 p/s     rising fast     <- leading indicator
+#   PSI mem some      0.01       10.33
+#   PSI mem full      0.01       5.52
+#   MemAvailable      4.42 GB    falling
+#
+# Swap-IN rate is the earliest useful signal: pages coming BACK from swap means
+# the working set no longer fits, which is exactly what stalls keystrokes. It
+# moves before PSI-full does, and PSI-full is already "too late" — by then
+# every task is blocked.
+
+set -uo pipefail
+
+MODE="${1:---report}"
+# Per-mode state: tmux (every status-interval) and --check (timer) both sample,
+# and sharing one file would make each clobber the other's baseline, producing
+# garbage rates. Keep them independent.
+STATE="${RAM_WARN_STATE:-$HOME/.local/state/ram-warn${MODE//--/-}.state}"
+LOG="${RAM_WARN_LOG:-$HOME/.local/state/ram-warn.log}"
+mkdir -p "$(dirname "$STATE")"
+
+# --- thresholds, calibrated to this host (12 GB WSL, 8 GB swap) -------------
+# CALIBRATED EMPIRICALLY. 12 samples over 60s on a functional system, versus a
+# real meltdown captured earlier. The first set of thresholds sat INSIDE the
+# functional band, so the indicator was permanently red and therefore useless.
+#
+#                      functional band     meltdown     old threshold
+#   avail %            12 - 52 %           8 %          warn <26%  (inside)
+#   PSI full avg10     0.03 - 1.59         15.68        crit >2.0  (inside)
+#   swap %             0 - 46 %            97 %         warn >50%  (borderline)
+#   swap-in /s         0 - 2390            23880        warn >250  (inside)
+#
+# PSI full avg10 is the best discriminator: ~10x separation. Swap-in and swap%
+# are noisy (both spike hard during normal churn), so they only ever escalate
+# to WARN, never CRIT on their own. Percentages, not fixed MB, so these survive
+# a change to the WSL memory allocation.
+PSI_FULL_WARN=5.0      # functional peaks at 1.59
+PSI_FULL_CRIT=12.0     # meltdown was 15.68
+SWAPIN_WARN=6000       # functional peaks at 2390
+SWAPIN_CRIT=15000      # meltdown was 23880
+AVAILPCT_WARN=8        # functional dips to 12%
+AVAILPCT_CRIT=5
+SWAPFULL_WARN=70       # functional peaks at 46%
+SWAPFULL_CRIT=90       # meltdown was 97%
+# Added after a stall that showed PSI full 74-81% while RAM was only ~88% and
+# swap was quiet. Cause was file-page REFAULT thrashing: the page cache got
+# squeezed below the ~1.2 GB of executable pages the running processes need, so
+# binaries were evicted and immediately re-read. No swap traffic at all, which
+# is why the memory-only signals could not explain it. Calm baseline for both
+# counters below is 0/s, so these thresholds are far above normal.
+REFAULT_WARN=2000      # file pages evicted-then-needed-again, per second
+REFAULT_CRIT=10000
+IOPSI_WARN=15.0        # io PSI full avg10; calm is ~0.6
+IOPSI_CRIT=30.0
+# CPU pressure. Added after catching a stall with load 6.86 on 6 cores while
+# memory PSI was 0.00 -- CPU starvation feels identical to a memory stall
+# (frozen typing, tabs not switching) but every memory signal reads normal.
+# Uses avg60, not avg10: a boot storm (12 nvim restoring, all their language
+# servers indexing) legitimately hit some avg10=32 / avg60=21 and resolved
+# itself in three minutes. Thresholds sit above that so it does not cry wolf.
+# /proc/pressure/cpu "full" is always 0 system-wide, so "some" is the only
+# usable field here.
+CPUPSI_WARN=45.0       # boot storm peaked at avg60=21
+CPUPSI_CRIT=70.0
+
+now=$(date +%s)
+
+# tmux runs status-interval every 1s here. Recomputing that often is wasteful
+# and makes the swap-in rate meaningless (a 1-second delta is pure noise), so
+# --tmux serves a cached line and only recomputes every TMUX_CACHE_SEC.
+TMUX_CACHE_SEC=15
+CACHE="$HOME/.local/state/ram-warn-tmux.cache"
+if [[ "$MODE" == "--tmux" ]]; then
+  if [[ -f "$CACHE" ]]; then
+    cache_age=$(( now - $(stat -c %Y "$CACHE" 2>/dev/null || echo 0) ))
+    if (( cache_age < TMUX_CACHE_SEC )); then cat "$CACHE"; exit 0; fi
+  fi
+fi
+
+pswpin=$(awk '/^pswpin/{print $2}' /proc/vmstat)
+avail=$(awk '/^MemAvailable/{printf "%d",$2/1024}' /proc/meminfo)
+swapused=$(awk '/SwapTotal/{t=$2}/SwapFree/{f=$2} END{printf "%d",(t-f)/1024}' /proc/meminfo)
+swappct=$(awk '/SwapTotal/{t=$2}/SwapFree/{f=$2} END{if(t>0) printf "%d",100*(t-f)/t; else print 0}' /proc/meminfo)
+psi_some=$(awk -F'avg10=' '/^some/{split($2,a," ");print a[1]}' /proc/pressure/memory)
+psi_full=$(awk -F'avg10=' '/^full/{split($2,a," ");print a[1]}' /proc/pressure/memory)
+psi_io=$(awk -F'avg10=' '/^full/{split($2,a," ");print a[1]}' /proc/pressure/io)
+refault=$(awk '/^workingset_refault_file/{print $2}' /proc/vmstat)
+psi_cpu=$(awk -F'avg60=' '/^some/{split($2,a," ");print a[1]}' /proc/pressure/cpu)
+nproc_n=$(nproc)
+load1=$(cut -d' ' -f1 /proc/loadavg)
+
+# --- rate from previous sample ---------------------------------------------
+prev_t=0; prev_p=0; prev_level="OK"; prev_rf=0
+[[ -r "$STATE" ]] && read -r prev_t prev_p prev_level prev_rf < "$STATE" 2>/dev/null || true
+: "${prev_t:=0}" "${prev_p:=0}" "${prev_level:=OK}" "${prev_rf:=0}"
+
+dt=$(( now - prev_t ))
+if (( prev_t > 0 && dt > 0 && dt < 3600 && pswpin >= prev_p )); then
+  swapin_rate=$(( (pswpin - prev_p) / dt ))
+else
+  swapin_rate=-1          # no usable baseline yet
+fi
+if (( prev_t > 0 && dt > 0 && dt < 3600 && prev_rf > 0 && refault >= prev_rf )); then
+  refault_rate=$(( (refault - prev_rf) / dt ))
+else
+  refault_rate=-1
+fi
+
+# --- classify ---------------------------------------------------------------
+level=OK; reasons=()
+fgt() { awk -v a="$1" -v b="$2" 'BEGIN{exit !(a+0 > b+0)}'; }
+
+availpct=$(awk '/^MemTotal/{t=$2}/^MemAvailable/{a=$2} END{printf "%d",100*a/t}' /proc/meminfo)
+
+if fgt "$psi_full" "$PSI_FULL_CRIT"; then level=CRIT; reasons+=("stalled ${psi_full}%")
+elif fgt "$psi_full" "$PSI_FULL_WARN"; then [[ $level == OK ]] && level=WARN; reasons+=("stalling ${psi_full}%")
+fi
+if   (( availpct < AVAILPCT_CRIT )); then level=CRIT; reasons+=("only ${availpct}% free")
+elif (( availpct < AVAILPCT_WARN )); then [[ $level == OK ]] && level=WARN; reasons+=("${availpct}% free")
+fi
+# Swap FULLNESS on its own means nothing, and warning on it was a mistake:
+# observed swap at 94% with PSI full = 0.00 and 2.53 GB free — a completely
+# healthy system. Pages were written out earlier and never needed again, which
+# is swap working correctly. What hurts is pages being read BACK (swap-in) or
+# actual stalling (PSI). So swap% only counts when it is nearly exhausted AND
+# something is actively paging in — i.e. no headroom left and churn happening.
+if (( swappct > SWAPFULL_CRIT && swapin_rate > SWAPIN_WARN )); then
+  level=CRIT; reasons+=("swap ${swappct}% full + paging in")
+fi
+# Refault storm: the signature of the page cache being too small for the code
+# that is running. Distinguishes "thrashing my own binaries" from "out of RAM".
+if (( refault_rate >= 0 )); then
+  if   (( refault_rate > REFAULT_CRIT )); then level=CRIT; reasons+=("refaults ${refault_rate}/s")
+  elif (( refault_rate > REFAULT_WARN )); then [[ $level == OK ]] && level=WARN; reasons+=("refaults ${refault_rate}/s")
+  fi
+fi
+if fgt "$psi_io" "$IOPSI_CRIT"; then level=CRIT; reasons+=("io stalled ${psi_io}%")
+elif fgt "$psi_io" "$IOPSI_WARN"; then [[ $level == OK ]] && level=WARN; reasons+=("io stalling ${psi_io}%")
+fi
+if fgt "$psi_cpu" "$CPUPSI_CRIT"; then level=CRIT; reasons+=("cpu starved ${psi_cpu}%")
+elif fgt "$psi_cpu" "$CPUPSI_WARN"; then [[ $level == OK ]] && level=WARN; reasons+=("cpu contended ${psi_cpu}%")
+fi
+
+# Swap-in escalates to WARN only — it spikes to ~2400p/s during normal churn,
+# so on its own it is not evidence of a meltdown.
+if (( swapin_rate >= 0 )); then
+  if   (( swapin_rate > SWAPIN_CRIT )); then level=CRIT; reasons+=("swap-in ${swapin_rate}p/s")
+  elif (( swapin_rate > SWAPIN_WARN )); then [[ $level == OK ]] && level=WARN; reasons+=("swap-in ${swapin_rate}p/s")
+  fi
+fi
+
+printf '%s %s %s %s\n' "$now" "$pswpin" "$level" "$refault" > "$STATE"
+
+# --- who to blame: biggest agent subtree ------------------------------------
+culprit=$(ps -eo pid=,ppid=,rss=,comm= | awk '
+  { pp[$1]=$2; rss[$1]=$3; comm[$1]=$4 }
+  END {
+    for (p in rss) {
+      r=p; h=0
+      while (r != 1 && r != 0 && h < 24) {
+        if (comm[r] ~ /^(claude|opencode)$/) { tot[r] += rss[p]; break }
+        r=pp[r]; h++
+      }
+    }
+    best=0; bp=""
+    for (t in tot) if (tot[t] > best) { best=tot[t]; bp=t }
+    if (bp != "") printf "%s pid=%s %.0fMB", comm[bp], bp, best/1024
+  }')
+
+# Name the top CPU process usefully. "node"/"MainThread" alone is useless here:
+# a language server, an MCP server and an agent child all look identical. Prefer
+# a mason/bin LSP name, then any .js/.mjs script, then the executable basename.
+cpu_hog=$(ps -eo pcpu=,pid=,args= --sort=-pcpu 2>/dev/null | head -1 | awk '{
+  n=""
+  for (i=3; i<=NF; i++) {
+    if ($i ~ /mason\/bin\//)            { split($i,a,"/"); n=a[length(a)]; break }
+  }
+  if (n == "") for (i=3; i<=NF; i++) {
+    if ($i ~ /\.(js|mjs|cjs)$/)          { split($i,a,"/"); n=a[length(a)]; break }
+  }
+  if (n == "") { split($3,b,"/"); n=b[length(b)] }
+  printf "%s pid=%s %s%%", n, $2, $1
+}')
+
+case "$MODE" in
+  --tmux)
+    # Silent when healthy so it costs no visual space. Written to the cache
+    # too, so the next ~15s of 1-second status refreshes are free.
+    # #[nobold] is required: tmux style attributes persist into later segments,
+    # and the following segment sets fg/bg but not bold, so CRIT's bold leaked
+    # into the "work: 1" segment to the right.
+    if [[ "$level" == "OK" ]]; then : > "$CACHE"
+    elif [[ "$level" == "WARN" ]]; then printf '#[fg=#eed49f]▲ %s #[nobold]' "${reasons[0]}" > "$CACHE"
+    else printf '#[fg=#ed8796,bold]■ %s #[nobold]' "${reasons[0]}" > "$CACHE"; fi
+    cat "$CACHE"
+    ;;
+  --check)
+    printf '%s level=%s avail=%dMB swap=%dMB swapin=%sp/s refault=%s/s iopsi=%s cpupsi=%s load=%s some=%s full=%s %s\n' \
+      "$(date -Iseconds)" "$level" "$avail" "$swapused" "$swapin_rate" "$refault_rate" "$psi_io" "$psi_cpu" "$load1" \
+      "$psi_some" "$psi_full" "${reasons[*]:-}" >> "$LOG"
+    # Alert only on escalation, so it never nags.
+    rank() { case $1 in OK) echo 0;; WARN) echo 1;; CRIT) echo 2;; esac; }
+    if (( $(rank "$level") > $(rank "$prev_level") )); then
+      msg="RAM $level: ${reasons[*]} | mem: ${culprit:-n/a} | cpu: ${cpu_hog:-n/a}"
+      command -v tmux >/dev/null && tmux display-message -d 6000 "$msg" 2>/dev/null
+      echo "$msg"
+    fi
+    ;;
+  *)
+    echo "level      : $level ${reasons[*]:+(${reasons[*]})}"
+    if (( swapin_rate < 0 )); then
+      echo "swap-in    : (need a second run to measure the rate)"
+    else
+      echo "swap-in    : ${swapin_rate} pages/s   [warn>${SWAPIN_WARN} crit>${SWAPIN_CRIT}]"
+    fi
+    echo "MemAvailable: ${avail} MB (${availpct}%)  [warn<${AVAILPCT_WARN}% crit<${AVAILPCT_CRIT}%]"
+    echo "swap used  : ${swapused} MB (${swappct}%)  [warn>${SWAPFULL_WARN}% crit>${SWAPFULL_CRIT}%]"
+    echo "PSI some/full (avg10): ${psi_some} / ${psi_full}  [full warn>${PSI_FULL_WARN} crit>${PSI_FULL_CRIT}]"
+    echo "PSI io full (avg10)  : ${psi_io}  [warn>${IOPSI_WARN} crit>${IOPSI_CRIT}]"
+    echo "PSI cpu some (avg60) : ${psi_cpu}  [warn>${CPUPSI_WARN} crit>${CPUPSI_CRIT}]   load ${load1} / ${nproc_n} cores"
+    if (( refault_rate < 0 )); then
+      echo "file refaults        : (need a second run)"
+    else
+      echo "file refaults        : ${refault_rate}/s  [warn>${REFAULT_WARN} crit>${REFAULT_CRIT}]  <- high = page cache too small"
+    fi
+    echo "biggest agent: ${culprit:-n/a}"
+    echo "top cpu      : ${cpu_hog:-n/a}"
+    [[ "$level" != OK ]] && echo "-> close or /clear the session above before it starts swapping"
+    ;;
+esac
+exit 0
