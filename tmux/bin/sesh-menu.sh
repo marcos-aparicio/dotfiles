@@ -25,7 +25,7 @@ selected="$(
     --bind 'ctrl-x:change-prompt(📁  )+reload(sesh list -z --icons)' \
     --bind 'ctrl-f:change-prompt(🔎  )+reload(fd -H -d 2 -t d -E .Trash . ~)' \
     --bind 'ctrl-d:execute(tmux kill-session -t {2..})+change-prompt(⚡  )+reload(sesh list --icons)' \
-    --bind 'ctrl-w:execute(session_name=$(echo {2..} | sed "s/\x1b\[[0-9;]*m//g"); session_path=$(sesh list --json | jq -r ".[] | select(.Name == \"$session_name\") | .Path"); tv workmux "$session_path")+abort' \
+    --bind "ctrl-w:execute($HOME/dotfiles/tmux/bin/sesh-workmux.sh {2..})+abort" \
     --preview-window 'right:55%' \
     --preview 'sesh preview {2..}'
 )"
