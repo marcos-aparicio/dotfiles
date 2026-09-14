@@ -38,7 +38,8 @@ output=""
 echo "$tags $output"
 '''
 format = '⏱️  $output '
-when = '''! test -z "$(timew get dom.active.duration 2>/dev/null | grep -v '^0$')"'''
+when = '''test "$(timew get dom.active 2>/dev/null)" != "0"'''
+shell = ["sh", "-c"]
 
 [time]
 disabled = false
