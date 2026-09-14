@@ -1,6 +1,14 @@
 #:schema https://github.com/joshmedeski/sesh/raw/main/sesh.schema.json
 
 cache = false
+
+# Entries are Go regexes matched UNANCHORED against the session name, so the
+# leading ^ matters: a bare "dash" would also swallow real sessions such as
+# w/feat-dashboard-redesign.
+# Hides the per-repo gh-dash sessions made by ~/.local/scripts/tmux-dash;
+# reach one directly with `tmux attach -t "=dash/<repo>"` or prefix+S.
+blacklist = ["^dash/"]
+
 import = [
   "~/dotfiles/sesh-sessions/personal.toml",
   "~/dotfiles/sesh-sessions/dotfiles.toml",
