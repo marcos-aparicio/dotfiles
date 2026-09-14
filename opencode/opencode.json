@@ -6,15 +6,9 @@
     "webfetch": "ask"
   },
   "mcp": {
-    "anki-mcp": {
-      "type": "local",
-      "command": [
-        "ankimcp",
-        "--stdio"
-      ],
-      "environment": {
-        "ANKI_CONNECT_URL": "http://localhost:8765"
-      },
+    "gemini-api-docs-mcp": {
+      "type": "remote",
+      "url": "https://gemini-api-docs-mcp.dev",
       "enabled": true
     },
     "chrome-devtools": {
