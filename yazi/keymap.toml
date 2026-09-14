@@ -4,10 +4,15 @@ append_keymap = [
   { on = [ "M", "r"], run = "shell --block 'fzf-mount mount readonly'", desc = "Mount system (read-only)" },
   { on = [ "M", "u"], run = "shell --block 'fzf-mount unmount'", desc = "Unmount system" },
   { on = [ "M", "t"], run = "shell --block 'fzf-mount toggle-mode'", desc = "Toggle mount mode (ro/rw)" },
-  { on = [ "\"" ], run = "shell --block 'shell --interactive --orphan'", desc = "shell --interactive --" },
+  { on = [ "g", "w"], run = "cd /mnt/c/Users/Marcos", desc = "Go to Windows user route" },
+  { on = [ "\"" ], run = "shell --block 'shell --interactive --orphan'", desc = "shell --interactive --orphan" },
   { on = [ "\\", "v" ], run = "shell --block 'vd $1'", desc = "run visidata on the current file" },
   { on = [ "T", "a" ], run = "plugin tmsu-tag", desc = "Add tags to the current file" },
   { on = [ "T", "e" ], run = "plugin tmsu-tag -- edit", desc = "Edit tags for the current file" },
   { on = [ "T", "c" ], run = "plugin tmsu-tag -- clipboard", desc = "Copy tags of the current file to clipboard" },
+  { on = [ "e" ], run = "shell --orphan 'explorer.exe .'", desc = "Run file explorer" },
+]
 
+prepend_keymap = [
+  { on = [ "W" ], run = 'shell -- dwag.exe $(echo %s | xargs -n1 wslpath -w)', desc = "Drag files/folders" },
 ]
