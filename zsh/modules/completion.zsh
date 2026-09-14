@@ -48,17 +48,13 @@ _init_completions &!
 # Lazy load nvm - only when node/npm commands are used
 export NVM_DIR="$([ -z "${XDG_CONFIG_HOME-}" ] && printf %s "${HOME}/.nvm" || printf %s "${XDG_CONFIG_HOME}/nvm")"
 
-nvm_lazy_init() {
-  [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
-  [ -s "$NVM_DIR/bash_completion" ] && \. "$NVM_DIR/bash_completion"
-  for cmd in node npm yarn npx; do
-    unalias $cmd 2>/dev/null
-  done
-  unset -f nvm_lazy_init
-}
+# nvm_lazy_init() {
+[ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
+[ -s "$NVM_DIR/bash_completion" ] && \. "$NVM_DIR/bash_completion"
+#   unset -f nvm_lazy_init
+# }
 
 # Hook into common node-related commands
-# DISABLED: These aliases interfere with the build system's own Node installation
 # for cmd in node npm yarn npx; do
 #   alias $cmd="nvm_lazy_init && $cmd"
 # done
