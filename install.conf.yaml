@@ -68,6 +68,8 @@
     ~/.omp/agent/mcp.json: omp/mcp.json
     ~/.omp/agent/extensions: omp/extensions
     ~/.omp/agent/skills: omp/skills
+    ~/.omp/agent/agents: omp/agents
+    ~/.omp/agent/rules: omp/rules
     ~/.config/speech-dispatcher: speech-dispatcher
     ~/.config/qutebrowser:
       path: qutebrowser
