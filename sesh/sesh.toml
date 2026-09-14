@@ -10,7 +10,7 @@ cache = false
 blacklist = ["^dash/"]
 
 import = [
-  "~/dotfiles/sesh-sessions/personal.toml",
+  # "~/dotfiles/sesh-sessions/personal.toml",
   "~/dotfiles/sesh-sessions/dotfiles.toml",
   "~/dotfiles/sesh-sessions/work.toml"
 ]
