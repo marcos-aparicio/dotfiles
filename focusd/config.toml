@@ -1,0 +1,67 @@
+# Which preset is currently active
+active_preset = "pomodoro"
+daily_goal_minutes = 0
+
+# Show desktop notifications when session ends
+show_notifications = true
+
+# Show progress of timer
+tui_show_progress = true
+# Show ascci art and animation
+tui_show_ascii_art = true
+# Show short stats/preset in timer page
+tui_show_stats = true
+
+# Theme for TUI.
+# Available themes: dracula, one-dark-pro, nord, catppuccin-mocha, catppuccin-latte,
+# gruvbox-dark, gruvbox-light, tokyo-night, solarized-dark, solarized-light,
+# monokai-pro, rose-pine, kanagawa, everforest, cyberpunk, midnight-commander
+theme = "tokyo-night"
+
+# Font used by the Clock in TUI.
+# Available fonts: ansi-regular, ansi-shadow, dos-rebel, future, mono-12, mono-9, sm-block, terminus, tubes-regular
+font = "terminus"
+
+## Hooks allow you to run custom commands when sessions start, pause, or resume.
+## These run before session-specific hooks.
+
+# Runs when pausing/resume any session
+hook_pause = ""
+hook_resume = ""
+
+## Session-specific hooks (run in addition to the generic hooks above)
+# Work session hooks
+hook_start_work = ""
+hook_pause_work = ""
+hook_resume_work = ""
+
+# Short break hooks
+hook_start_short_break = ""
+hook_pause_short_break = ""
+hook_resume_short_break = ""
+
+# Long break hooks
+hook_start_long_break = ""
+hook_pause_long_break = ""
+hook_resume_long_break = ""
+
+## Presets define your work/break cycle.
+[presets.pomodoro]
+work_minutes = 15
+short_break_minutes = 5
+long_break_minutes = 15
+sessions_before_long_break = 4
+
+[presets.deep_work]
+work_minutes = 50
+short_break_minutes = 10
+long_break_minutes = 30
+sessions_before_long_break = 4
+
+## You can add more presets here if you want.
+## Example:
+# [presets.study]
+# work_minutes = 45
+# short_break_minutes = 10
+# long_break_minutes = 20
+# sessions_before_long_break = 4
