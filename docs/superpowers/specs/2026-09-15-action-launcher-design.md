@@ -19,7 +19,7 @@ placeholder substitution, and no prompt schema — an action that needs input
 calls `read`. Headers in the first 10 lines: `desc`, `cwd`, `land`
 (`popup`|`window`|`pane`), `session`, `confirm`.
 
-## Two decisions worth remembering
+## Three decisions worth remembering
 
 **Re-fire finds the live pane via `@action`, a pane-local tmux option** — not
 the pane title, which agents overwrite, and not the window name, which
@@ -28,6 +28,12 @@ the pane title, which agents overwrite, and not the window name, which
 **`switch-client` from inside `display-popup -E` works.** The `tmux-dash` bind
 avoids popups for this reason, so it was the one uncertain mechanic; step 2 of
 `scripts/test-actions` proves the client lands on the spawned window.
+
+**The bind runs `cd /` before `tv actions`.** tv resolves its first argument
+as a directory before a channel name, so from a pane in `~/dotfiles` — which
+has an `actions/` dir — it silently opened the *files* channel rooted there,
+with the default `bat` preview. Reproduced both ways with an empty dir. The
+pane's path rides in `ACT_PWD` instead of being the picker's cwd.
 
 ## Deliberately not built
 

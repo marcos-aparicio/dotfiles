@@ -17,7 +17,11 @@ DIR="${ACTIONS_DIR:-$HOME/.local/actions}"
 
 hdr() { sed -n -E "1,10{s/^#[[:space:]]*$1:[[:space:]]*(.+)$/\1/p}" "$2" | sed -n 1p; }
 
-cwd_of() { local c; c=$(hdr cwd "$1"); c=${c/#\~/$HOME}; printf '%s' "${c:-$PWD}"; }
+# ACT_PWD is the launching pane's path. The picker cannot run from that path:
+# `tv actions` resolves the argument as a directory before a channel name, so
+# launching from a cwd containing an `actions/` dir silently opened the files
+# channel instead. The bind cds to / and passes the real path through instead.
+cwd_of() { local c; c=$(hdr cwd "$1"); c=${c/#\~/$HOME}; printf '%s' "${c:-${ACT_PWD:-$PWD}}"; }
 
 # Re-firing a long-lived action should return you to it, not spawn a second.
 # Keyed on a pane option, not the pane title: agents overwrite the title.
@@ -46,7 +50,9 @@ preview() {
   l=$(hdr land "$f"); s=$(hdr session "$f")
   printf 'cwd      %s\nland     %s\nsession  %s\nconfirm  %s\n\n' \
     "$(cwd_of "$f")" "${l:-popup}" "${s:-<current>}" "$(hdr confirm "$f" || true)"
-  bat --style=plain --color=always "$f" 2>/dev/null || cat "$f"
+  # bat on most distros, batcat on Debian/Ubuntu, cat anywhere.
+  local pager; pager=$(command -v bat || command -v batcat || true)
+  { [ -n "$pager" ] && "$pager" --style=plain --color=always "$f"; } || cat "$f"
 }
 
 run() {
