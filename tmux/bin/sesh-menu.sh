@@ -30,4 +30,10 @@ selected="$(
     --preview 'sesh preview {2..}'
 )"
 
-[ -n "$selected" ] && sesh connect "$selected"
+# No selection means ESC, or the ^w workmux bind handing off via +abort. Both
+# are normal exits, but `run-shell` paints any non-zero status across the screen
+# as "'sesh-menu.sh' returned 1", so this path has to end at 0 deliberately.
+[ -n "$selected" ] || exit 0
+
+# exec so a genuine connect failure still surfaces its own status.
+exec sesh connect "$selected"
