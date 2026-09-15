@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+# desc: daily summary of the work notes
+# cwd: ~/Documents/Areas/Obsidian/work
+# land: window
+# session: w/notes
+# The slash command is repo-local (.omp/commands/daily-summary.md), so the cwd
+# above is what makes it resolve. No argument: $ARGUMENTS there is the raw
+# recap, and the command resolves today's date itself.
+exec omp /daily-summary
