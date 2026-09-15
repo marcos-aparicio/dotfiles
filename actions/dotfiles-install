@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+# desc: install dotfiles (dotbot)
+# cwd: ~/dotfiles
+# land: popup
+exec ./install

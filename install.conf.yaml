@@ -83,6 +83,7 @@
     ~/.config/systemd/user/download-organizer.service: systemd/download-organizer.service
     # scripts
     ~/.local/scripts: scripts
+    ~/.local/actions: actions
     # submodules
     ~/.config/nvim: nvim
     ~/.config/awesome: awesome

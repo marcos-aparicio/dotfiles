@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+# desc: agent on a task, in this repo
+# land: window
+read -rp "task: " task
+exec omp "$task"

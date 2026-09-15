@@ -1,0 +1,98 @@
+#!/usr/bin/env bash
+# Run a context-bound action: a command that needs a particular cwd and/or a
+# particular tmux session before it means anything.
+#
+# An action is any executable in $ACTIONS_DIR (default ~/.local/actions).
+# Optional `# key: value` headers in its first 10 lines:
+#   desc:     shown in the picker            (default: filename)
+#   cwd:      directory, ~ expanded          (default: caller's cwd)
+#   land:     popup | window | pane          (default: popup)
+#   session:  target tmux session            (default: current)
+#   confirm:  any value -> ask before running
+#
+# Prompts belong inside the action script (`read -rp`), not here.
+set -euo pipefail
+
+DIR="${ACTIONS_DIR:-$HOME/.local/actions}"
+
+hdr() { sed -n -E "1,10{s/^#[[:space:]]*$1:[[:space:]]*(.+)$/\1/p}" "$2" | sed -n 1p; }
+
+cwd_of() { local c; c=$(hdr cwd "$1"); c=${c/#\~/$HOME}; printf '%s' "${c:-$PWD}"; }
+
+# Re-firing a long-lived action should return you to it, not spawn a second.
+# Keyed on a pane option, not the pane title: agents overwrite the title.
+find_pane() {
+  tmux list-panes -a -F '#{@action}|#{session_name}:#{window_index}.#{pane_index}' |
+    awk -F'|' -v id="$1" '$1 == id { print $2; exit }'
+}
+
+goto() {
+  tmux switch-client -t "${1%%:*}"
+  tmux select-window -t "${1%.*}"
+  tmux select-pane -t "$1"
+}
+
+list() {
+  local f id d l
+  for f in "$DIR"/*; do
+    [ -x "$f" ] || continue
+    id=${f##*/}; d=$(hdr desc "$f"); l=$(hdr land "$f")
+    printf '%s\t%s [%s]\n' "$id" "${d:-$id}" "${l:-popup}"
+  done
+}
+
+preview() {
+  local f=$DIR/$1 l s
+  l=$(hdr land "$f"); s=$(hdr session "$f")
+  printf 'cwd      %s\nland     %s\nsession  %s\nconfirm  %s\n\n' \
+    "$(cwd_of "$f")" "${l:-popup}" "${s:-<current>}" "$(hdr confirm "$f" || true)"
+  bat --style=plain --color=always "$f" 2>/dev/null || cat "$f"
+}
+
+run() {
+  local id=$1 f=$DIR/$1 cwd land ses target
+  [ -x "$f" ] || { echo "no such action: $id" >&2; exit 1; }
+  cwd=$(cwd_of "$f")
+  land=$(hdr land "$f"); land=${land:-popup}
+  ses=""
+
+  if [ "$land" != popup ]; then
+    ses=$(hdr session "$f"); ses=${ses:-$(tmux display-message -p '#S')}
+    target=$(find_pane "$id")
+    [ -n "$target" ] && { goto "$target"; return; }
+  fi
+
+  if [ -n "$(hdr confirm "$f" || true)" ]; then
+    printf '%s\n  cwd      %s\n  land     %s\n  session  %s\nrun it? [y/N] ' \
+      "$id" "$cwd" "$land" "${ses:-<this terminal>}"
+    read -rn1 reply; echo
+    [ "$reply" = y ] || { echo aborted; return; }
+  fi
+
+  case $land in
+    popup)
+      local code=0
+      (cd "$cwd" && "$f") || code=$?
+      read -rsn1 -p "── exit $code ── press any key ──" || true
+      ;;
+    window|pane)
+      tmux has-session -t "=$ses" 2>/dev/null || tmux new-session -d -s "$ses" -c "$cwd"
+      local fmt='#{session_name}:#{window_index}.#{pane_index}'
+      if [ "$land" = window ]; then
+        target=$(tmux new-window -dP -F "$fmt" -t "$ses:" -n "$id" -c "$cwd" "$f")
+      else
+        target=$(tmux split-window -dP -F "$fmt" -t "$ses:" -c "$cwd" "$f")
+      fi
+      tmux set-option -p -t "$target" @action "$id"
+      goto "$target"
+      ;;
+    *) echo "unknown land: $land" >&2; exit 1 ;;
+  esac
+}
+
+case ${1:-list} in
+  list)    list ;;
+  preview) preview "$2" ;;
+  run)     run "$2" ;;
+  *)       echo "usage: actions [list|preview <id>|run <id>]" >&2; exit 1 ;;
+esac

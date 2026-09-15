@@ -1,0 +1,24 @@
+# Context-bound actions: commands that need a particular cwd and/or tmux
+# session. The engine (`actions`) owns everything; this is just the picker.
+# Entries are tab separated: id <TAB> display
+
+[metadata]
+name = "actions"
+description = "Run an action in its own cwd / tmux session"
+requirements = ["actions", "tmux"]
+
+[source]
+command = "actions list"
+display = "{split:\\t:1}"
+output = "{split:\\t:0}"
+
+[preview]
+command = "actions preview '{split:\\t:0}'"
+
+[keybindings]
+enter = "actions:run"
+
+[actions.run]
+description = "Run the action"
+command = "actions run '{split:\\t:0}'"
+mode = "execute"

@@ -1,0 +1,71 @@
+#!/usr/bin/env bash
+# Isolated tmux server so the live client is never touched.
+set -eu
+S=acttest
+d=$(mktemp -d)
+cat >"$d/tmux" <<EOF
+#!/bin/sh
+exec $(command -v tmux) -L $S "\$@"
+EOF
+chmod +x "$d/tmux"
+export PATH="$d:$PATH"
+export ACTIONS_DIR="$d/actions"
+mkdir -p "$ACTIONS_DIR"
+
+cat >"$ACTIONS_DIR/sleeper" <<'EOF'
+#!/usr/bin/env bash
+# desc: long lived thing
+# land: window
+# session: work
+exec sleep 300
+EOF
+cat >"$ACTIONS_DIR/splitter" <<'EOF'
+#!/usr/bin/env bash
+# desc: a split
+# land: pane
+# session: work
+exec sleep 300
+EOF
+cat >"$ACTIONS_DIR/nope" <<'EOF'
+#!/usr/bin/env bash
+# desc: guarded
+# land: window
+# session: work
+# confirm: yes
+exec sleep 300
+EOF
+chmod +x "$ACTIONS_DIR"/*
+
+trap 'tmux kill-server 2>/dev/null; rm -rf "$d"' EXIT
+tmux new-session -d -s home
+# a real attached client, so switch-client has something to switch
+script -qc "env -u TMUX TERM=xterm-256color tmux attach -t home" /dev/null >/dev/null 2>&1 &
+sleep 1
+
+A="$PWD/scripts/actions"
+
+echo "== 1. session 'work' does not exist yet =="
+tmux has-session -t =work 2>/dev/null && { echo FAIL; exit 1; } || echo "ok, absent"
+
+echo "== 2. land: window creates it and switches =="
+"$A" run sleeper
+tmux list-panes -a -F '#{session_name}:#{window_index}.#{pane_index} name=#{window_name} @action=#{@action}'
+echo "client is on: $(tmux display-message -p '#S:#I')"
+
+echo "== 3. re-fire -> no duplicate =="
+tmux switch-client -t home
+"$A" run sleeper
+echo "windows named sleeper: $(tmux list-windows -a -F '#{window_name}' | grep -c '^sleeper$')"
+echo "client is back on: $(tmux display-message -p '#S:#I')"
+
+echo "== 4. land: pane splits and is marked =="
+"$A" run splitter
+tmux list-panes -t work -F '#{session_name}:#{window_index}.#{pane_index} @action=#{@action}'
+
+echo "== 5. confirm: n aborts =="
+printf 'n' | "$A" run nope
+echo "windows named nope: $(tmux list-windows -a -F '#{window_name}' | grep -c '^nope$')"
+
+echo "== 6. confirm: y runs =="
+printf 'y' | "$A" run nope
+echo "windows named nope: $(tmux list-windows -a -F '#{window_name}' | grep -c '^nope$')"
