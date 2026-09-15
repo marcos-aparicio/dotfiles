@@ -4,6 +4,6 @@
 # land: window
 # session: w/notes
 # The slash command is repo-local (.omp/commands/daily-summary.md), so the cwd
-# above is what makes it resolve. No argument: $ARGUMENTS there is the raw
-# recap, and the command resolves today's date itself.
-exec omp /daily-summary
+# above is what makes it resolve. TZ pinned to New York because every entry in
+# notas-summary.md is timestamped EDT/EST, and the box is not guaranteed to be.
+exec omp "/daily-summary $(TZ=America/New_York date +%F)"
