@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+# desc: store sync — SHP-CA
+# cwd: ~/Projects/SHP-CA
+# land: popup
+# confirm: yes
+exec just sync
