@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+# desc: weekly tasks from the work notes
+# cwd: ~/Documents/Areas/Obsidian/work
+# land: window
+# session: w/notes
+# Repo-local slash command (.omp/commands/weekly-tasks.md); the cwd is what
+# makes it resolve. Its $ARGUMENTS is a week, and it confirms the resolved
+# range either way, so the ISO week is passed the way it expects it.
+exec omp "/weekly-tasks $(TZ=America/New_York date +%G-W%V)"
