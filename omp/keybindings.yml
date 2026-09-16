@@ -4,3 +4,10 @@ app.session.resume: ctrl+r
 app.history.search: []
 app.tools.expand: ctrl+o
 app.session.fork: ctrl+n
+# Only plain Ctrl+<letter> chords survive this terminal (Ctrl+Shift+O arrives as
+# Ctrl+O, Ctrl+Alt+O never arrives), so Ctrl+F is freed from emacs cursor-right —
+# the Right arrow keeps that job.
+tui.editor.cursorRight: right
+app.tools.toggleVisibility: ctrl+f
+# Ctrl+Y freed for the skill picker (skill-picker.ts); emacs-style yank unused.
+tui.editor.yank: []

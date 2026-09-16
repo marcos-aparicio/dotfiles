@@ -18,7 +18,8 @@ dev:
   autoqaConsent: granted
 display:
   smoothStreaming: false
-hideThinkingBlock: false
+  hideToolActivity: true
+hideThinkingBlock: true
 defaultThinkingLevel: auto
 tui:
   hyperlinks: always
