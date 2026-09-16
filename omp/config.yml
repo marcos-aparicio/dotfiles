@@ -11,7 +11,7 @@ symbolPreset: unicode
 composer:
   shape: band
 theme:
-  dark: titanium
+  dark: titanium-band
   light: light
 setupVersion: 2
 dev:
