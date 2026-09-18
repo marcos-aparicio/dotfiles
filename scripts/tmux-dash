@@ -39,8 +39,9 @@
 # tmux name match, so dash/foo cannot resolve to dash/foo-legacy.
 #
 # These sessions are hidden from the sesh picker via `blacklist = ["^dash/"]`
-# in ~/.config/sesh/sesh.toml. Reach one outside this binding with
-# `tmux attach -t "=dash/<repo>"` or prefix+S.
+# in ~/.config/sesh/sesh.toml, so the main picker stays project-oriented.
+# prefix+C-r is the dashboards-only picker over exactly these sessions
+# (tmux/bin/sesh-menu.sh dash, also reachable as ^r inside prefix+s).
 #
 # NOTE: no `pipefail`. `grep -q` (and `awk ... exit`) close the pipe early,
 # which sends SIGPIPE to the upstream command (gh/git/tmux), making it exit
