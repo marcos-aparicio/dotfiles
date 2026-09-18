@@ -5,14 +5,21 @@ cache = false
 # Entries are Go regexes matched UNANCHORED against the session name, so the
 # leading ^ matters: a bare "dash" would also swallow real sessions such as
 # w/feat-dashboard-redesign.
-# Hides the per-repo gh-dash sessions made by ~/.local/scripts/tmux-dash;
-# reach one directly with `tmux attach -t "=dash/<repo>"` or prefix+S.
+# Hides the per-repo gh-dash sessions made by ~/.local/scripts/tmux-dash: they
+# are throwaway caches, one per repo, and they crowd out the project sessions
+# in the main picker. They are still defined, in dash.toml below, and reached
+# through prefix+C-r — a dashboards-only filter that reads the live sessions
+# from the tmux server and the not-yet-started ones from that same file
+# (tmux/bin/sesh-menu.sh dash).
 blacklist = ["^dash/"]
 
 import = [
   # "~/dotfiles/sesh-sessions/personal.toml",
   "~/dotfiles/sesh-sessions/dotfiles.toml",
-  "~/dotfiles/sesh-sessions/work.toml"
+  "~/dotfiles/sesh-sessions/work.toml",
+  # Imported for completeness and schema validation; every entry in it is
+  # blacklisted above, so sesh itself never lists or starts these.
+  "~/dotfiles/sesh-sessions/dash.toml"
 ]
 
 [default_session]
