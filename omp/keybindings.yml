@@ -11,3 +11,6 @@ tui.editor.cursorRight: right
 app.tools.toggleVisibility: ctrl+f
 # Ctrl+Y freed for the skill picker (skill-picker.ts); emacs-style yank unused.
 tui.editor.yank: []
+# Ctrl+E freed for the transcript viewer (transcript-viewer.ts); the End key
+# keeps emacs-style move-to-line-end.
+tui.editor.cursorLineEnd: end
