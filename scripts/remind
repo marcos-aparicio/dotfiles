@@ -1,0 +1,134 @@
+#!/usr/bin/env bash
+# Reminders, backed by systemd.
+#
+#   remind 20m check the deploy      one-shot, relative
+#   remind 14:30 standup             one-shot, absolute (today or tomorrow)
+#   remind every 50m posture check   recurring interval
+#   remind daily 09:30 standup       recurring, same time each day
+#   remind list                      pending, both kinds
+#   remind cancel <name>             stop and remove a recurring one
+#
+# ONE-SHOT vs RECURRING USE DIFFERENT MECHANISMS, and the split is not
+# cosmetic: `--on-unit-active` on a *transient* unit is broken -- systemd
+# garbage-collects the unit once it elapses and the service never runs at all,
+# not even the first time. Verified on this box. So recurring reminders are
+# written unit files, which is what you want anyway for something you keep:
+# they survive reboot, `systemctl --user` can manage them without this script,
+# and you can read them.
+#
+# There is no state file. systemd IS the store, and `systemctl --user
+# list-timers` already knows everything `remind list` needs to print.
+#
+# AccuracySec is left at its 1 minute default: invisible on a 50 minute nag,
+# and it lets systemd batch wakeups instead of waking the CPU on the second.
+set -euo pipefail
+
+UNIT_DIR="$HOME/.config/systemd/user"
+NOTIFY="$HOME/.local/scripts/notify"
+TICKER="$HOME/.local/scripts/notify-timer-ticker"
+
+usage() { sed -n '2,10p' "$0" | sed 's/^# \?//'; exit "${1:-0}"; }
+
+# systemd unit names allow a narrow character set, and the text is arbitrary.
+slug() { printf '%s' "$1" | tr '[:upper:]' '[:lower:]' | tr -cs 'a-z0-9' '-' | sed 's/^-//;s/-$//' | cut -c1-40; }
+
+start_ticker() { setsid -f "$TICKER" >/dev/null 2>&1 || "$TICKER" >/dev/null 2>&1 & }
+
+cmd_list() {
+	systemctl --user list-timers --all --no-pager 'notif-*' 2>/dev/null |
+		awk 'NR==1 || /notif-/'
+}
+
+cmd_cancel() {
+	# Two statements, not one: within a single `local a=.. b=$a`, $a is not yet
+	# assigned when b expands, which under `set -u` aborts the function.
+	local name="${1:?remind cancel <name>}"
+	local unit="notif-$(slug "$name")"
+	systemctl --user stop "$unit.timer" "$unit.service" 2>/dev/null || true
+	systemctl --user disable "$unit.timer" 2>/dev/null || true
+	rm -f "$UNIT_DIR/$unit.timer" "$UNIT_DIR/$unit.service"
+	systemctl --user daemon-reload
+	systemctl --user reset-failed "$unit.timer" "$unit.service" 2>/dev/null || true
+	printf 'cancelled %s\n' "$name"
+}
+
+# Recurring: a written unit pair. $1 is the [Timer] body line.
+write_recurring() {
+	local timer_spec="$1" text="$2" name="${3:-}"
+	local unit="notif-$(slug "${name:-$text}")"
+	mkdir -p "$UNIT_DIR"
+	cat >"$UNIT_DIR/$unit.service" <<EOF
+[Unit]
+Description=reminder: $text
+
+[Service]
+Type=oneshot
+ExecStart=$NOTIFY -s reminder -- $text
+EOF
+	cat >"$UNIT_DIR/$unit.timer" <<EOF
+[Unit]
+Description=reminder timer: $text
+
+[Timer]
+$timer_spec
+# Same 1s accuracy as one-shots. systemd's 1 minute default batches wakeups,
+# which made a 4s test interval fire once in 13 seconds. On a 50 minute nag the
+# saving is one wakeup an hour -- not worth reminders that drift.
+AccuracySec=1s
+
+[Install]
+WantedBy=timers.target
+EOF
+	systemctl --user daemon-reload
+	systemctl --user enable --now "$unit.timer" >/dev/null
+	printf 'recurring reminder "%s" armed (cancel with: remind cancel %s)\n' \
+		"$text" "${unit#notif-}"
+}
+
+[ $# -gt 0 ] || usage 1
+
+case "$1" in
+	-h | --help) usage ;;
+	list | ls) cmd_list; exit 0 ;;
+	cancel | rm) shift; cmd_cancel "$@"; exit 0 ;;
+	every)
+		shift
+		interval="${1:?remind every <interval> <text>}"; shift
+		[ $# -gt 0 ] || usage 1
+		write_recurring "OnActiveSec=$interval
+OnUnitActiveSec=$interval" "$*"
+		exit 0
+		;;
+	daily)
+		shift
+		at="${1:?remind daily <HH:MM> <text>}"; shift
+		[ $# -gt 0 ] || usage 1
+		# Persistent: if the machine was asleep at the hour, fire on resume.
+		write_recurring "OnCalendar=$at
+Persistent=true" "$*"
+		exit 0
+		;;
+esac
+
+# One-shot. A ':' means a clock time, anything else is a duration.
+when="$1"; shift
+[ $# -gt 0 ] || usage 1
+text="$*"
+
+case "$when" in
+	*:*) flag="--on-calendar=$when" ;;
+	*) flag="--on-active=$when" ;;
+esac
+
+unit="notif-once-$(date +%s)-$$"
+# AccuracySec=1s, overriding systemd's 1 minute default. That default exists so
+# systemd can batch wakeups, which is right for a recurring nag but wrong here:
+# measured, a `remind 5s` fired 18 seconds late. If you say 20m you want 20m.
+# systemd-run's "Running timer as unit ..." banner goes to stderr, and this is
+# called from run-shell where stderr lands on the status line.
+systemd-run --user --unit="$unit" --collect "$flag" \
+	--timer-property=AccuracySec=1s \
+	"$NOTIFY" -s reminder -- "$text" >/dev/null 2>&1
+
+start_ticker
+printf 'reminder set: %s (%s)\n' "$text" "$when"

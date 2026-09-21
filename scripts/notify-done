@@ -1,0 +1,37 @@
+#!/usr/bin/env bash
+# Run a command, then notify with its exit code and how long it took.
+#
+#   notify-done cargo build
+#   notify-done -- docker compose up --build
+#
+# This is the deliberate half of command-completion: because it is the PARENT
+# of the command, it can report the exit status. `notify-attach` (prefix B),
+# which grabs an already-running process, cannot.
+#
+# It must be a script on $PATH rather than a shell function, since nushell
+# functions are invisible to tmux and to other shells. The consequence is that
+# it only wraps EXTERNAL commands -- nushell builtins and aliases will not
+# resolve. That is fine for the things worth waiting on.
+set -uo pipefail
+
+[ $# -gt 0 ] || { sed -n '2,6p' "$0" | sed 's/^# \?//'; exit 1; }
+[ "$1" = "--" ] && shift
+
+start=$SECONDS
+"$@"
+rc=$?
+elapsed=$((SECONDS - start))
+
+if [ "$elapsed" -lt 60 ]; then took="${elapsed}s"
+elif [ "$elapsed" -lt 3600 ]; then took="$((elapsed / 60))m$((elapsed % 60))s"
+else took="$((elapsed / 3600))h$(((elapsed % 3600) / 60))m"
+fi
+
+if [ "$rc" -eq 0 ]; then
+	"$HOME/.local/scripts/notify" -s "$1" -- "finished in $took"
+else
+	# A failed build is the case where you actually want interrupting.
+	"$HOME/.local/scripts/notify" -u critical -s "$1" -- "FAILED (exit $rc) after $took"
+fi
+
+exit "$rc"

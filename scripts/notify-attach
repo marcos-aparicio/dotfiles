@@ -1,0 +1,57 @@
+#!/usr/bin/env bash
+# Notify when the command ALREADY RUNNING in a tmux pane exits.
+#
+#   notify-attach [pane]      default: the current pane
+#
+# The rescue hatch for when you forgot to wrap it in notify-done.
+#
+# #{pane_pid} is the SHELL, not the command. The test for "is something running
+# here" is the terminal's foreground process group: ps reports tpgid (the
+# controlling terminal's foreground pgid) for the shell, and when that differs
+# from the shell's own pgid, a foreground job owns the terminal. That is
+# definitive, not a heuristic -- no polling the pane's output for changes.
+#
+# Then `tail --pid` blocks until that pid exits. It works on processes we did
+# not spawn, which `wait` cannot do.
+#
+# WHAT THIS CANNOT DO: report an exit code. We are not the parent, so we cannot
+# reap it -- we only learn that it ended, and a Ctrl-C is indistinguishable
+# from success. Use notify-done when you know in advance that you care.
+set -euo pipefail
+
+# Internal: the background half. Blocks on a pid we do not own, then reports.
+# Elapsed is measured from the moment you attached, not from when the command
+# started -- we have no way to know the latter for a process we did not spawn.
+if [ "${1:-}" = "--wait" ]; then
+	start=$SECONDS
+	tail --pid="$2" -f /dev/null
+	e=$((SECONDS - start))
+	if [ "$e" -lt 60 ]; then took="${e}s"
+	elif [ "$e" -lt 3600 ]; then took="$((e / 60))m$((e % 60))s"
+	else took="$((e / 3600))h$(((e % 3600) / 60))m"
+	fi
+	"$HOME/.local/scripts/notify" -s "$3" -- "finished in $4 ($took after attach)"
+	exit 0
+fi
+
+pane="${1:-}"
+[ -n "$pane" ] || pane="$(tmux display-message -p '#{pane_id}')"
+
+read -r pane_pid cmd <<<"$(tmux display-message -p -t "$pane" '#{pane_pid} #{pane_current_command}')"
+
+tpgid="$(ps -o tpgid= -p "$pane_pid" 2>/dev/null | tr -d ' ')"
+pgid="$(ps -o pgid= -p "$pane_pid" 2>/dev/null | tr -d ' ')"
+
+if [ -z "$tpgid" ] || [ "$tpgid" = "$pgid" ] || [ "$tpgid" -le 0 ] 2>/dev/null; then
+	tmux display-message "notify-attach: nothing running in $pane"
+	exit 0
+fi
+
+# The foreground pgid is also the pid of the process group leader.
+fg_pid="$tpgid"
+
+tmux display-message "watching $cmd in $pane"
+
+setsid -f "$0" --wait "$fg_pid" "$cmd" "$pane" >/dev/null 2>&1 ||
+	"$0" --wait "$fg_pid" "$cmd" "$pane" >/dev/null 2>&1 &
+exit 0

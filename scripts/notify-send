@@ -1,0 +1,69 @@
+#!/usr/bin/env bash
+# A real `notify-send` on $PATH.
+#
+# There is no notify-send binary on this machine. It existed only as a nushell
+# function, which means tmux (run-shell, hooks, popups -- all `sh`) could never
+# see it, and every notify-send call in the bash scripts here failed silently:
+# scripts/timer, thyme-on-*.sh, screenshot-tag, the rofi applets. This fixes all
+# of them at once.
+#
+# WSL has no notification daemon, so a Linux notify-send there either fails
+# outright or posts into a session nobody is watching. wsl-notify-send.exe is a
+# Windows binary that raises a real Windows toast. It lives in ~/.local/bin
+# rather than on the Windows PATH: WSL inherits its Windows PATH from the
+# terminal, so a Windows-installed binary is not reliably reachable, while
+# /init can launch an .exe from a Linux path perfectly well.
+#
+#   Reinstall with: gh release download -R stuartleeks/wsl-notify-send \
+#     -p wsl-notify-send_windows_amd64.zip
+#
+# The gate is two-part on purpose. WSL_INTEROP proves /init can actually launch
+# Windows binaries (interop can be switched off per-distro in wsl.conf), and the
+# `command -v` proves the binary is reachable. If either fails, or we are on a
+# real Linux box, this falls through to a genuine notify-send so the same
+# dotfiles work everywhere.
+#
+# The two CLIs disagree about shape: wsl-notify-send takes exactly ONE
+# positional and silently prints its usage (exit 0!) for anything else, so
+# summary/body have to be split across --category and that positional. Flags
+# with no Windows equivalent (--urgency, --expire-time) are accepted and
+# dropped; -a becomes --appId.
+set -euo pipefail
+
+summary="" body="" urgency="" expire="" appname="" icon=""
+positional=()
+
+while [ $# -gt 0 ]; do
+	case "$1" in
+		-u | --urgency) urgency="$2"; shift 2 ;;
+		-t | --expire-time) expire="$2"; shift 2 ;;
+		-a | --app-name) appname="$2"; shift 2 ;;
+		-i | --icon) icon="$2"; shift 2 ;;
+		-c | --category | -h | --hint) shift 2 ;;
+		-e | --transient | -p | --print-id) shift ;;
+		--) shift; while [ $# -gt 0 ]; do positional+=("$1"); shift; done ;;
+		-*) shift ;;
+		*) positional+=("$1"); shift ;;
+	esac
+done
+
+summary="${positional[0]:-}"
+body="${positional[1]:-}"
+
+if [ -n "${WSL_INTEROP:-}" ] && command -v wsl-notify-send.exe >/dev/null 2>&1; then
+	args=(--category "$summary")
+	[ -n "$appname" ] && args+=(--appId "$appname")
+	exec wsl-notify-send.exe "${args[@]}" "$body"
+fi
+
+# Real Linux. `command -v` skips this script so the fallback cannot recurse.
+real="$(PATH="$(echo "$PATH" | tr ':' '\n' | grep -v "$(dirname "$0")" | paste -sd:)" \
+	command -v notify-send || true)"
+[ -n "$real" ] || { printf '%s: %s\n' "$summary" "$body" >&2; exit 0; }
+
+args=()
+[ -n "$urgency" ] && args+=(-u "$urgency")
+[ -n "$expire" ] && args+=(-t "$expire")
+[ -n "$appname" ] && args+=(-a "$appname")
+[ -n "$icon" ] && args+=(-i "$icon")
+exec "$real" "${args[@]}" "$summary" ${body:+"$body"}

@@ -133,6 +133,12 @@ export def --env y [...args] {
 	^rm -fp $tmp
 }
 
+# notify-send lives in scripts/notify-send (on PATH via ~/.local/scripts), not
+# here. A nushell function is invisible to tmux, to systemd units, and to every
+# bash script in this repo -- all of which run `sh` -- so the function version
+# left `notify-send` broken everywhere except an interactive nu prompt. The
+# script handles the same WSL toast routing for all of them.
+
 # --- agent memory smoothing -------------------------------------------------
 # Goal: trade a little agent speed for a machine that stays usable. Neither of
 # these caps the heap, so neither can kill a session -- they only make garbage

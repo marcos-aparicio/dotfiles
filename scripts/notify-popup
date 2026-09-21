@@ -1,0 +1,76 @@
+#!/usr/bin/env bash
+# The inbox reader. Meant to be run inside `display-popup -E` (prefix N).
+#
+# Unread first, then read, newest first within each group. Enter or `d`
+# dismisses the highlighted item; `D` dismisses everything; `x` deletes the
+# highlighted line outright. Read items STAY VISIBLE -- glancing at a
+# notification while busy should not destroy it, which is the main thing the
+# older tmux notification plugins get wrong (they are dump-and-clear only).
+set -euo pipefail
+
+STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/tmux-notify"
+INBOX="$STATE_DIR/inbox.jsonl"
+
+if [ ! -s "$INBOX" ]; then
+	[ "${1:-}" = "--render" ] && exit 0
+	printf 'inbox is empty\n'; sleep 0.7; exit 0
+fi
+
+# Each fzf row is "<line number>\t<rendered>". The line number is the handle we
+# mutate by, so rendering never has to round-trip back through a parser.
+#
+# Slurped (-s) rather than streamed: line identity has to survive sorting, and
+# `input_line_number` cannot give it to us once the rows are reordered.
+render() {
+	jq -s -r --argjson now "$(date +%s)" '
+		to_entries
+		| map(.value + {lineno: (.key + 1)})
+		| sort_by(.ts) | reverse | sort_by(.read)
+		| .[]
+		| ($now - .ts) as $age
+		| ( if   $age < 60    then "\($age)s"
+		    elif $age < 3600  then "\(($age/60)|floor)m"
+		    elif $age < 86400 then "\(($age/3600)|floor)h"
+		    else "\(($age/86400)|floor)d" end ) as $ago
+		| ( if .read then "  " else "● " end ) as $dot
+		| ( if .urgency == "critical" then "\u001b[31m"
+		    elif .read then "\u001b[90m" else "\u001b[33m" end ) as $col
+		| "\(.lineno)\t\($col)\($dot)\($ago + "     " | .[0:5])\u001b[0m \(.text)  \u001b[90m[\(.source)]\u001b[0m"
+	' <"$INBOX"
+}
+
+# Mark one line read, or every line, and repush the bar. The whole file is
+# rewritten; at a few hundred lines that is far cheaper than maintaining any
+# kind of index.
+mutate() {
+	local op="$1" lineno="${2:-0}" tmp
+	tmp="$(mktemp)"
+	case "$op" in
+		read) jq -s -c --argjson n "$lineno" \
+			'to_entries | map(if .key + 1 == $n then .value + {read: true} else .value end) | .[]' \
+			<"$INBOX" >"$tmp" ;;
+		read-all) jq -c '.read = true' <"$INBOX" >"$tmp" ;;
+		delete) jq -s -c --argjson n "$lineno" \
+			'to_entries | map(select(.key + 1 != $n) | .value) | .[]' \
+			<"$INBOX" >"$tmp" ;;
+	esac
+	mv -f "$tmp" "$INBOX"
+	"$HOME/.local/scripts/notify" --refresh
+}
+
+export -f mutate
+export INBOX STATE_DIR
+
+# `--render` is how the fzf reload bindings re-enter this script. It must come
+# before fzf, or a reload would spawn a second picker instead of a row list.
+[ "${1:-}" = "--render" ] && { render; exit 0; }
+
+render | fzf --ansi --delimiter='\t' --with-nth=2.. \
+	--prompt=' notifications  ' \
+	--header='enter/d dismiss · D dismiss all · x delete · esc close' \
+	--reverse --no-sort --info=inline \
+	--bind="enter:execute-silent(bash -c 'mutate read {1}')+reload($0 --render)" \
+	--bind="d:execute-silent(bash -c 'mutate read {1}')+reload($0 --render)" \
+	--bind="D:execute-silent(bash -c 'mutate read-all')+reload($0 --render)" \
+	--bind="x:execute-silent(bash -c 'mutate delete {1}')+reload($0 --render)" \
+	>/dev/null || true

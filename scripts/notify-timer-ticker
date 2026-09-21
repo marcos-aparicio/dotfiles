@@ -1,0 +1,62 @@
+#!/usr/bin/env bash
+# Keeps the "next reminder in Nm" bar segment current, then gets out of the way.
+#
+# A countdown is the one thing here that genuinely changes on its own, so it
+# cannot use the pure push model the unread badge uses. But it does not need a
+# `#(script)` segment either: that would fork once a second forever, including
+# the ~23 hours a day with no timer pending.
+#
+# Instead this is a detached loop that rewrites @notif_timer every 30s and
+# EXITS once nothing is pending. Idle machine, zero processes. `remind` starts
+# one; a second invocation is harmless because of the lock below.
+#
+# Minute resolution is deliberate. Second-resolution on a 20 minute reminder is
+# noise, and 30s of drift on a minute display is never visible.
+set -euo pipefail
+
+INTERVAL=30
+LOCK="${XDG_RUNTIME_DIR:-/tmp}/notif-ticker.lock"
+
+# One ticker per machine. flock beats a pidfile: it is released by the kernel if
+# we are killed, so there is no stale-lock recovery path to get wrong.
+exec 9>"$LOCK"
+flock -n 9 || exit 0
+
+# Seconds until the soonest pending notif-* timer, or empty if there are none.
+next_in() {
+	systemctl --user list-timers --all --no-pager 'notif-*' 2>/dev/null |
+		awk -v now="$(date +%s)" '
+			/notif-/ && $0 !~ /^NEXT/ {
+				cmd = "date -d \"" $1 " " $2 " " $3 " " $4 "\" +%s 2>/dev/null"
+				cmd | getline t; close(cmd)
+				if (t > now && (best == 0 || t < best)) best = t
+			}
+			END { if (best) print best - now }
+		'
+}
+
+human() {
+	local s="$1"
+	if [ "$s" -lt 60 ]; then printf '<1m'
+	elif [ "$s" -lt 3600 ]; then printf '%dm' $((s / 60))
+	else printf '%dh%02dm' $((s / 3600)) $(((s % 3600) / 60))
+	fi
+}
+
+push() {
+	tmux set -g @notif_timer "$1" 2>/dev/null || true
+	tmux refresh-client -S 2>/dev/null || true
+}
+
+while :; do
+	tmux info >/dev/null 2>&1 || exit 0
+
+	left="$(next_in || true)"
+	if [ -z "$left" ]; then
+		push ''
+		exit 0
+	fi
+
+	push "#[align=right,fg=#8bd5ca,bg=#{@thm_bg}] ⏲ $(human "$left") "
+	sleep "$INTERVAL"
+done

@@ -1,0 +1,137 @@
+#!/usr/bin/env bash
+# The only writer in the notification system. Everything -- reminders, finished
+# commands, ad-hoc scripts -- funnels through here.
+#
+#   notify [-u low|normal|critical] [-s source] <text...>
+#   notify --refresh          repush the bar from the inbox (startup, post-dismiss)
+#
+# Three things happen per call: a line is appended to the inbox, the tmux bar
+# segment is repushed, and (above `low`) a Windows toast goes out.
+#
+# WHY THE BAR IS PUSHED, NOT POLLED: status-interval is 1 here because
+# tmux-pomodoro-plus sets it, so a `#(script)` segment would fork a process
+# every single second, forever, to display a number that changes maybe five
+# times a day. Instead this script renders the whole styled segment into the
+# @notif_seg user option and the bar just reads the variable. Idle cost: zero.
+set -euo pipefail
+
+STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/tmux-notify"
+INBOX="$STATE_DIR/inbox.jsonl"
+
+# Catppuccin macchiato. @thm_bg / @thm_surface_0 are resolved by tmux at draw
+# time (see the E: note below), the literals are theme colours with no option.
+C_ALERT="#ed8796" # red   -- arriving
+C_QUIET="#f5a97f" # amber -- unread, settled
+SEP="" # nf-pl-left_half_circle_thick, matching the neighbouring segments
+
+PULSE_CYCLES=3
+PULSE_HALF=0.45 # seconds per half-cycle; the bar's own 1Hz redraw is far too
+                # slow to read as a flash, so we drive it with refresh-client -S
+
+usage() { sed -n '2,8p' "$0" | sed 's/^# \?//'; exit "${1:-0}"; }
+
+have_tmux() { [ -n "${TMUX:-}" ] || tmux info >/dev/null 2>&1; }
+
+# Push a value into a tmux user option and force an immediate status redraw.
+# Without -S the change waits up to a full status-interval to appear.
+push() {
+	have_tmux || return 0
+	tmux set -g "$1" "$2" 2>/dev/null || true
+	tmux refresh-client -S 2>/dev/null || true
+}
+
+unread_count() {
+	[ -s "$INBOX" ] || { echo 0; return; }
+	jq -s '[.[] | select(.read == false)] | length' "$INBOX" 2>/dev/null || echo 0
+}
+
+# The settled state: a small amber count. Empty when the inbox is clear, which
+# renders as nothing and costs zero columns.
+quiet_segment() {
+	local n="$1"
+	[ "$n" -gt 0 ] 2>/dev/null || { printf ''; return; }
+	printf '#[align=right,fg=%s,bg=#{@thm_bg}]%s#[align=right,bg=%s,fg=#030303] ● %s ' \
+		"$C_QUIET" "$SEP" "$C_QUIET" "$n"
+}
+
+# The arriving state: the full message, red, impossible to miss.
+alert_segment() {
+	local text="$1" inverted="$2"
+	if [ "$inverted" = "1" ]; then
+		printf '#[align=right,fg=%s,bg=#{@thm_bg}]%s#[align=right,bg=%s,fg=#030303,bold] ● %s ' \
+			"$C_ALERT" "$SEP" "$C_ALERT" "$text"
+	else
+		printf '#[align=right,bg=#{@thm_bg},fg=%s,bold]%s ● %s ' \
+			"$C_ALERT" "$SEP" "$text"
+	fi
+}
+
+refresh() { push @notif_seg "$(quiet_segment "$(unread_count)")"; }
+
+main() {
+	local urgency=normal source="${NOTIFY_SOURCE:-cli}"
+	while [ $# -gt 0 ]; do
+		case "$1" in
+			-u | --urgency) urgency="$2"; shift 2 ;;
+			-s | --source) source="$2"; shift 2 ;;
+			--refresh) refresh; return 0 ;;
+			-h | --help) usage ;;
+			--) shift; break ;;
+			-*) printf 'notify: unknown flag %s\n' "$1" >&2; usage 1 ;;
+			*) break ;;
+		esac
+	done
+
+	[ $# -gt 0 ] || usage 1
+	local text="$*"
+
+	case "$urgency" in low | normal | critical) ;; *)
+		printf 'notify: urgency must be low, normal or critical\n' >&2; exit 1 ;;
+	esac
+
+	mkdir -p "$STATE_DIR"
+	# Epoch, not ISO-8601: jq's fromdateiso8601 only accepts Z-suffixed UTC and
+	# rejects the -04:00 offset `date -Is` produces here.
+	jq -cn --argjson ts "$(date +%s)" --arg u "$urgency" --arg s "$source" --arg t "$text" \
+		'{ts: $ts, urgency: $u, source: $s, text: $t, read: false}' >>"$INBOX"
+
+	local n; n="$(unread_count)"
+
+	if [ "$urgency" = low ]; then
+		push @notif_seg "$(quiet_segment "$n")"
+	else
+		# Pulse, then settle. Detached so the caller -- often a systemd timer or
+		# a tmux run-shell that wants to exit immediately -- does not block for
+		# the duration of the animation.
+		local settled; settled="$(quiet_segment "$n")"
+		local on off
+		on="$(alert_segment "$text" 1)"
+		off="$(alert_segment "$text" 0)"
+		setsid -f "$0" --pulse "$on" "$off" "$settled" >/dev/null 2>&1 ||
+			"$0" --pulse "$on" "$off" "$settled" >/dev/null 2>&1 &
+
+		notify-send -u "$urgency" "$source" "$text" >/dev/null 2>&1 || true
+
+		# display-popup takes the keyboard, so only the tier that explicitly asks
+		# to interrupt you gets one.
+		#
+		# Dispatched through run-shell -b: a bare `tmux display-popup` invoked
+		# from a shell blocks until the popup is dismissed, which would hang
+		# notify-done on its own failure notification.
+		if [ "$urgency" = critical ] && have_tmux; then
+			tmux run-shell -b "tmux display-popup -E -w 70% -h 50% -T ' notifications ' '$HOME/.local/scripts/notify-popup'" 2>/dev/null || true
+		fi
+	fi
+}
+
+# Internal: the flash animation, re-entering this script in the background.
+if [ "${1:-}" = "--pulse" ]; then
+	for _ in $(seq "$PULSE_CYCLES"); do
+		push @notif_seg "$2"; sleep "$PULSE_HALF"
+		push @notif_seg "$3"; sleep "$PULSE_HALF"
+	done
+	push @notif_seg "$4"
+	exit 0
+fi
+
+main "$@"
