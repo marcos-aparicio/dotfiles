@@ -1,12 +1,14 @@
 #!/usr/bin/env bash
 # Reminders, backed by systemd.
 #
-#   remind 20m check the deploy      one-shot, relative
-#   remind 14:30 standup             one-shot, absolute (today or tomorrow)
-#   remind every 50m posture check   recurring interval
-#   remind daily 09:30 standup       recurring, same time each day
-#   remind list                      pending, both kinds
-#   remind cancel <name>             stop and remove a recurring one
+#   remind 20m check the deploy         one-shot, relative
+#   remind 14:30 standup                one-shot, absolute (today or tomorrow)
+#   remind every 50m posture check      recurring, forever
+#   remind every 25m -n 4 drink water   recurring, stops after 4 firings
+#   remind every 25m -a 5m -n 4 water   ...first one 5m from now, not 25m
+#   remind daily 09:30 standup          recurring, same time each day
+#   remind list                         pending, both kinds
+#   remind cancel <name>                stop and remove a recurring one
 #
 # ONE-SHOT vs RECURRING USE DIFFERENT MECHANISMS, and the split is not
 # cosmetic: `--on-unit-active` on a *transient* unit is broken -- systemd
@@ -24,8 +26,35 @@
 set -euo pipefail
 
 UNIT_DIR="$HOME/.config/systemd/user"
+COUNT_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/tmux-notify/counts"
 NOTIFY="$HOME/.local/scripts/notify"
 TICKER="$HOME/.local/scripts/notify-timer-ticker"
+
+# Internal: one firing of a BOUNDED repeat. systemd timers have no repeat
+# count, so the count lives in a file and the unit cancels itself on the last
+# firing. Runs before anything else because it re-enters this script from the
+# unit's own ExecStart.
+if [ "${1:-}" = "--tick" ]; then
+	tick_unit="$2" tick_max="$3"; shift 3
+	[ "${1:-}" = "--" ] && shift
+	mkdir -p "$COUNT_DIR"
+	n=$(( $(cat "$COUNT_DIR/$tick_unit" 2>/dev/null || echo 0) + 1 ))
+	printf '%s' "$n" >"$COUNT_DIR/$tick_unit"
+	"$NOTIFY" -s reminder -- "$* ($n/$tick_max)"
+	if [ "$n" -ge "$tick_max" ]; then
+		# The cleanup MUST escape this service's cgroup. A plain background
+		# child (even setsid) is killed the instant the oneshot exits, because
+		# KillMode defaults to control-group -- measured: `-n 3` fired 4 times.
+		# A transient unit is owned by systemd instead, so it outlives us. It
+		# also cannot run synchronously here: stopping the timer from inside
+		# its own service's job would deadlock.
+		systemd-run --user --collect --unit="notif-reap-$tick_unit" \
+			/bin/sh -c "systemctl --user disable --now '$tick_unit.timer' >/dev/null 2>&1
+				rm -f '$UNIT_DIR/$tick_unit.timer' '$UNIT_DIR/$tick_unit.service' '$COUNT_DIR/$tick_unit'
+				systemctl --user daemon-reload" >/dev/null 2>&1 || true
+	fi
+	exit 0
+fi
 
 usage() { sed -n '2,10p' "$0" | sed 's/^# \?//'; exit "${1:-0}"; }
 
@@ -52,18 +81,24 @@ cmd_cancel() {
 	printf 'cancelled %s\n' "$name"
 }
 
-# Recurring: a written unit pair. $1 is the [Timer] body line.
+# Recurring: a written unit pair. $1 is the [Timer] body, $4 an optional repeat
+# limit. systemd has no "fire N times" concept, so a bounded repeat routes
+# ExecStart through `remind --tick`, which counts and then cancels itself.
 write_recurring() {
-	local timer_spec="$1" text="$2" name="${3:-}"
+	local timer_spec="$1" text="$2" name="${3:-}" times="${4:-0}"
 	local unit="notif-$(slug "${name:-$text}")"
+	local run="$NOTIFY -s reminder -- $text"
+	# `[ ] && x=y` would abort the function under set -e when the test fails.
+	if [ "$times" -gt 0 ] 2>/dev/null; then run="$0 --tick $unit $times -- $text"; fi
 	mkdir -p "$UNIT_DIR"
+	rm -f "$COUNT_DIR/$unit"
 	cat >"$UNIT_DIR/$unit.service" <<EOF
 [Unit]
 Description=reminder: $text
 
 [Service]
 Type=oneshot
-ExecStart=$NOTIFY -s reminder -- $text
+ExecStart=$run
 EOF
 	cat >"$UNIT_DIR/$unit.timer" <<EOF
 [Unit]
@@ -94,9 +129,19 @@ case "$1" in
 	every)
 		shift
 		interval="${1:?remind every <interval> <text>}"; shift
+		# -n N  stop after N firings (default: forever)
+		# -a T  delay before the FIRST firing (default: one interval)
+		times=0 first=""
+		while [ $# -gt 0 ]; do
+			case "$1" in
+				-n | --times) times="$2"; shift 2 ;;
+				-a | --after) first="$2"; shift 2 ;;
+				*) break ;;
+			esac
+		done
 		[ $# -gt 0 ] || usage 1
-		write_recurring "OnActiveSec=$interval
-OnUnitActiveSec=$interval" "$*"
+		write_recurring "OnActiveSec=${first:-$interval}
+OnUnitActiveSec=$interval" "$*" "" "$times"
 		exit 0
 		;;
 	daily)
