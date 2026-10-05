@@ -6,4 +6,7 @@
 # The slash command is repo-local (.omp/commands/daily-summary.md), so the cwd
 # above is what makes it resolve. TZ pinned to New York because every entry in
 # notas-summary.md is timestamped EDT/EST, and the box is not guaranteed to be.
-exec omp "/daily-summary $(TZ=America/New_York date +%F)"
+# --auto-approve so the summary lands in notas-summary.md without an approval
+# prompt: the command reads the three context-mode sqlite stores (exec tier) and
+# then edits the notes file, and yolo is only the default until config says else.
+exec omp --auto-approve "/daily-summary $(TZ=America/New_York date +%F)"

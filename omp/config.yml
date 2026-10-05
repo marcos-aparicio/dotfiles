@@ -1,9 +1,9 @@
 modelRoles:
-  default: anthropic/claude-opus-5
   sp_cheap: anthropic/claude-haiku-4-5:high
   sp_impl: anthropic/claude-sonnet-5:high
   sp_review: anthropic/claude-sonnet-5:high
   sp_capable: anthropic/claude-opus-5:high
+  default: anthropic/claude-opus-5-5
 task:
   agentModelOverrides:
     sonic: "@sp_cheap"
@@ -18,7 +18,7 @@ dev:
   autoqaConsent: granted
 display:
   smoothStreaming: false
-  hideToolActivity: true
+  hideToolActivity: false
 hideThinkingBlock: true
 defaultThinkingLevel: auto
 tui:
