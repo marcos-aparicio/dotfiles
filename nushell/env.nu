@@ -80,3 +80,14 @@ if (which fnm | is-not-empty) {
     fnm env --json | from json | load-env
     $env.PATH = ($env.PATH | prepend ($env.FNM_MULTISHELL_PATH | path join "bin"))
 }
+
+# Cap Vitest worker count globally so a `pnpm test` in any worktree can't
+# exhaust the 8GB WSL memory cap. The projects use `pool: 'vmThreads'`, which
+# trades memory for speed (~3.6GB peak at 2 workers, scaling with worker count)
+# and only pins workers on CI -- so locally, on a 6-core box, it would otherwise
+# spawn ~5 workers and blow past the ceiling. These env vars are the local cap.
+# Need the absolute floor instead? run `pnpm exec vitest run --pool=forks` (~684MB).
+$env.VITEST_MAX_THREADS = "2"
+$env.VITEST_MIN_THREADS = "1"
+$env.VITEST_MAX_FORKS = "2"
+$env.VITEST_MIN_FORKS = "1"
