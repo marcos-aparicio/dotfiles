@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+# desc: resume every agent from the last snapshot
+# confirm: yes
+agent-snapshot --show
+echo
+agent-snapshot --restore --yes

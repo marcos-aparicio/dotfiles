@@ -1,0 +1,6 @@
+[Unit]
+Description=Snapshot running AI agent sessions for agent-restore
+
+[Service]
+Type=oneshot
+ExecStart=%h/.local/scripts/agent-snapshot --auto

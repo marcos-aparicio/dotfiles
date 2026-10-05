@@ -1,0 +1,12 @@
+[Unit]
+Description=Snapshot running AI agent sessions every 5 minutes
+
+[Timer]
+# Monotonic on purpose: a missed save is worthless after the fact, so there is
+# nothing to catch up on at boot (unlike the localsend timer's Persistent=).
+OnBootSec=5min
+OnUnitActiveSec=5min
+AccuracySec=30s
+
+[Install]
+WantedBy=timers.target

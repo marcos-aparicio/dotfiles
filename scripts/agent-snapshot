@@ -3,16 +3,18 @@
 # can resume the CONVERSATIONS, not just reopen shells in the right folders.
 #
 #   agent-snapshot            write a snapshot now
+#   agent-snapshot --auto     same, but never replace a snapshot from before the
+#                             last boot that has not been restored yet (timer)
 #   agent-snapshot --show     print the newest snapshot
 #   agent-snapshot --restore  emit the commands to bring it all back (dry run)
 #   agent-snapshot --restore --yes   actually recreate the tmux windows
 #
 # Why this rather than `workmux resurrect`: workmux records the WORKTREE that
 # had an agent, which is enough to reopen a window but not to get the
-# conversation back. Here the session id is read from /proc/<pid>/fd -- the
-# agent literally has its own .jsonl open -- so it is exact rather than a guess
-# at "newest file in that directory", which goes wrong whenever two sessions
-# ran in one worktree.
+# conversation back. Here the session id comes from the file each agent keeps
+# for itself (omp: a breadcrumb per terminal; claude: one file per pid), so it
+# is exact rather than a guess at "newest file in that directory", which goes
+# wrong whenever two sessions ran in one worktree.
 
 set -uo pipefail
 
@@ -28,30 +30,45 @@ collect() {
   done < <(tmux list-panes -a -F '#{pane_pid} #{session_name} #{window_index} #{pane_index}' 2>/dev/null)
 
   for pid in $(pgrep -x omp; pgrep -x claude; pgrep -x pi); do
-    local comm cwd sf sid loc anc
+    local comm cwd sf sid loc anc tty bc
     comm=$(ps -o comm= -p "$pid" 2>/dev/null | tr -d ' ')
     cwd=$(readlink "/proc/$pid/cwd" 2>/dev/null)
     [[ -z "$cwd" ]] && continue
 
-    # The open .jsonl IS the session. Filter to files whose name carries a
-    # session id; omp also opens helper logs like Task9ChatNotify.jsonl for
-    # subagents, which are not resumable sessions.
-    # Match the BASENAME, not the whole path: subagent logs such as
-    # Task9ChatNotify.jsonl live inside a session directory whose own name
-    # contains the id, so a path-wide match lets them through.
-    sf=$(ls -l "/proc/$pid/fd" 2>/dev/null \
-         | grep -oE '/[^ ]*/(sessions|projects)/[^ ]*\.jsonl' \
-         | while read -r f; do
-             b=$(basename "$f")
-             [[ "$b" =~ [0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.jsonl$ ]] && echo "$f"
-           done | head -1)
-    [[ -z "$sf" ]] && continue
-
+    # Where each agent itself records which session a process is running.
+    # These are rewritten whenever the session changes, so they are exact
+    # without having to catch the agent mid-write.
+    sid=""
     case "$comm" in
-      omp|pi)  sid=$(basename "$sf" .jsonl | sed 's/^[0-9T:.Z-]*_//') ;;
-      claude)  sid=$(basename "$sf" .jsonl) ;;
-      *) continue ;;
+      omp)
+        # One breadcrumb per terminal: line 2 is the session file. Keyed by
+        # the pty, and only read for a LIVE omp on that pty, so a leftover
+        # breadcrumb from an earlier omp in the same terminal is never used.
+        tty=$(readlink "/proc/$pid/fd/0" 2>/dev/null)
+        bc="$HOME/.omp/agent/terminal-sessions/${tty#/dev/}"; bc=${bc/pts\//pts-}
+        [[ -f "$bc" ]] && sf=$(sed -n 2p "$bc") && \
+          sid=$(basename "$sf" .jsonl | sed 's/^[0-9T:.Z-]*_//')
+        ;;
+      claude)
+        sf="$HOME/.claude/sessions/$pid.json"
+        [[ -f "$sf" ]] && sid=$(jq -r '.sessionId // empty' "$sf" 2>/dev/null)
+        ;;
     esac
+
+    # Fallback (pi, or an agent too old to write the above): the session
+    # .jsonl, if it happens to be open right now. Match the BASENAME against
+    # an id: subagent logs like Task9ChatNotify.jsonl sit inside a directory
+    # whose name carries the id, so a path-wide match would let them through.
+    if [[ -z "$sid" ]]; then
+      sf=$(ls -l "/proc/$pid/fd" 2>/dev/null \
+           | grep -oE '/[^ ]*/(sessions|projects)/[^ ]*\.jsonl' \
+           | while read -r f; do
+               b=$(basename "$f")
+               [[ "$b" =~ [0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.jsonl$ ]] && echo "$f"
+             done | head -1)
+      [[ -n "$sf" ]] && sid=$(basename "$sf" .jsonl | sed 's/^[0-9T:.Z-]*_//')
+    fi
+    [[ -z "$sid" ]] && continue
 
     # Walk up to the tmux pane that owns this agent.
     loc=""; anc=$pid
@@ -75,15 +92,28 @@ case "${1:-}" in
     [[ -f "$CUR" ]] || { echo "no snapshot to restore"; exit 1; }
     yes=0; [[ "${2:-}" == "--yes" ]] && yes=1
     echo "# from snapshot $(date -r "$CUR" '+%Y-%m-%d %H:%M:%S')"
+    # Windows are named after the agent. Two of the same agent in one session
+    # get numbered (omp1, omp2); a lone one stays plain (omp). Count first so
+    # the first of a pair is already omp1 rather than a bare omp.
+    declare -A TOTAL SEEN
+    while IFS=$'\t' read -r comm cwd _ loc; do
+      [[ -d "$cwd" ]] || continue   # skipped below, so must not count
+      k="${loc%%|*}|$comm"; TOTAL["$k"]=$(( ${TOTAL["$k"]:-0} + 1 ))
+    done < "$CUR"
     while IFS=$'\t' read -r comm cwd sid loc; do
       [[ -d "$cwd" ]] || { echo "# SKIP (gone): $cwd"; continue; }
       sess="${loc%%|*}"
       case "$comm" in
-        omp|pi) cmd="$comm --resume $sid" ;;
+        # tmux runs this via `nu -c`, which skips config.nu, so the `omp` ->
+        # omp-capped wrapper does not exist there. Name the capped one directly
+        # or restored agents come back without their memory limit.
+        omp)    cmd="omp-capped --resume $sid" ;;
+        pi)     cmd="pi --resume $sid" ;;
         claude) cmd="claude --resume $sid" ;;
         *) continue ;;
       esac
-      win=$(basename "$cwd" | cut -c1-18)
+      k="$sess|$comm"; SEEN["$k"]=$(( ${SEEN["$k"]:-0} + 1 ))
+      win=$comm; (( TOTAL["$k"] > 1 )) && win="$comm${SEEN["$k"]}"
       if (( yes )); then
         # After a cold start the recorded tmux session does not exist yet, and
         # `new-window -t <missing>` fails with "can't find window". Create the
@@ -108,15 +138,33 @@ case "${1:-}" in
         fi
       fi
     done < "$CUR"
-    (( yes )) || echo "# add --yes to run these"
+    # Marks the pre-reboot snapshot as dealt with, so --auto may replace it.
+    (( yes )) && touch "$DIR/restored" || echo "# add --yes to run these"
     ;;
   *)
+    # After a restart the timer would otherwise replace the snapshot you are
+    # about to restore with whatever few agents happen to be up already.
+    # Until that pre-boot snapshot is restored, --auto keeps latest.tsv and
+    # only adds to the history.
+    keep=0
+    if [[ "${1:-}" == "--auto" && -f "$CUR" ]]; then
+      boot=$(date -d "$(uptime -s)" +%s)
+      if (( $(date -r "$CUR" +%s) < boot )) && \
+         ! [[ "$DIR/restored" -nt "$CUR" ]]; then
+        keep=1
+      fi
+    fi
     n=$(collect | tee "$CUR.tmp" | wc -l)
     if (( n > 0 )); then
-      mv "$CUR.tmp" "$CUR"
-      cp "$CUR" "$DIR/$(date +%Y%m%d-%H%M%S).tsv"
-      # keep a fortnight of history, discard the rest
-      ls -1t "$DIR"/2*.tsv 2>/dev/null | tail -n +200 | xargs -r rm -f
+      cp "$CUR.tmp" "$DIR/$(date +%Y%m%d-%H%M%S).tsv"
+      if (( keep )); then
+        rm -f "$CUR.tmp"
+        echo "kept the pre-reboot snapshot; restore it to resume auto-saving"
+      else
+        mv "$CUR.tmp" "$CUR"
+      fi
+      # With a save every 5 minutes, prune by age rather than count.
+      find "$DIR" -maxdepth 1 -name '2*.tsv' -mtime +14 -delete
     else
       rm -f "$CUR.tmp"   # never overwrite a good snapshot with an empty one
     fi

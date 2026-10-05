@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+# desc: snapshot the running agents so agent-restore can bring them back
+agent-snapshot
+echo
+agent-snapshot --show
