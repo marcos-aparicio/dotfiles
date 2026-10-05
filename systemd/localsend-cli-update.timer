@@ -1,0 +1,17 @@
+[Unit]
+Description=Check for localsend-cli updates every 3 days
+
+[Timer]
+# Daily nudge, 3-day interval enforced by the script's stamp file. A monotonic
+# OnUnitActiveSec=3d would restart its clock on every WSL boot and a failed run
+# would wait the full three days; this shape survives both.
+OnCalendar=daily
+Persistent=true
+# This box is off far more than it is on, so catch up after boot rather than
+# skipping the window: Persistent above, plus slack so the check never lands in
+# the middle of login.
+AccuracySec=1h
+RandomizedDelaySec=30min
+
+[Install]
+WantedBy=timers.target

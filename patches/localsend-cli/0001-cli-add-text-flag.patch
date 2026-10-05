@@ -1,0 +1,184 @@
+diff --git a/cli/src/app/mod.rs b/cli/src/app/mod.rs
+index aba0b64..8b30301 100644
+--- a/cli/src/app/mod.rs
++++ b/cli/src/app/mod.rs
+@@ -23,10 +23,12 @@ use localsend::multicast::{DEFAULT_MULTICAST_GROUP, DEFAULT_MULTICAST_GROUP_V6,
+ use localsend::util::interface::{InterfaceFilter, local_interface_addresses};
+ use receive::{Answer, PendingReceive, ReceiveSession};
+ use sending::SendState;
++use std::collections::HashMap;
+ use std::path::PathBuf;
+ use std::sync::Arc;
+ use std::time::Duration;
+ use tokio::sync::{mpsc, oneshot};
++use uuid::Uuid;
+ 
+ /// Events processed by the central application loop.
+ pub enum AppEvent {
+@@ -90,16 +92,70 @@ struct App {
+     picker: Option<Picker>,
+     device_list: Option<DeviceList>,
+ 
+-    /// Files given via `-f`/`--file`; sending uses these instead of the picker.
++    /// Files given via `-f`/`--file` and texts given via `-t`/`--text`;
++    /// sending uses these instead of the picker.
+     preselected: Vec<PathBuf>,
+ 
++    /// The `--text` entries of `preselected`, mapped to their content.
++    ///
++    /// A receiver treats a request as a message, rather than a file to save,
++    /// only when all three hold: the request carries exactly one file, its
++    /// `fileType` is a `text/*` MIME type, and the text itself is embedded in
++    /// the `preview` field. `collect_files` needs the content for that last
++    /// one; the `.txt` name it is written under covers the second.
++    messages: HashMap<PathBuf, String>,
++
++    /// Directory holding the materialized `--text` payloads, removed on exit.
++    scratch: Option<PathBuf>,
++
+     events_tx: mpsc::Sender<AppEvent>,
+ }
+ 
++/// Writes each `--text` value into a fresh scratch directory and returns the
++/// combined send list, the texts keyed by their path, and the scratch directory
++/// (`None` when no text was given, so the common case touches no disk).
++fn materialize_texts(
++    files: Vec<PathBuf>,
++    texts: &[String],
++) -> anyhow::Result<(Vec<PathBuf>, HashMap<PathBuf, String>, Option<PathBuf>)> {
++    let mut preselected = files;
++    let mut messages = HashMap::new();
++    if texts.is_empty() {
++        return Ok((preselected, messages, None));
++    }
++
++    // Prefer XDG_RUNTIME_DIR: it is tmpfs, user-private and wiped on logout,
++    // so a run killed with SIGKILL (which skips the cleanup at the end of
++    // `run`) cannot leave message text readable on disk. /tmp is the fallback.
++    let base = std::env::var_os("XDG_RUNTIME_DIR")
++        .map(PathBuf::from)
++        .filter(|dir| dir.is_dir())
++        .unwrap_or_else(std::env::temp_dir);
++    let dir = base.join(format!("localsend-cli-{}", Uuid::new_v4()));
++    std::fs::create_dir_all(&dir)?;
++    #[cfg(unix)]
++    std::fs::set_permissions(&dir, std::os::unix::fs::PermissionsExt::from_mode(0o700))?;
++    for text in texts {
++        anyhow::ensure!(!text.trim().is_empty(), "--text was empty");
++        let path = dir.join(format!("{}.txt", Uuid::new_v4()));
++        std::fs::write(&path, text.as_bytes())?;
++        preselected.push(path.clone());
++        messages.insert(path, text.clone());
++    }
++    Ok((preselected, messages, Some(dir)))
++}
++
+ pub async fn run(args: Args) -> anyhow::Result<()> {
+     for path in &args.file {
+         anyhow::ensure!(path.is_file(), "Not a file: {}", path.display());
+     }
++
++    // The whole send pipeline is path-keyed (`FileContent::Path`), so each
++    // `--text` becomes a real file in a private scratch directory rather than
++    // an in-memory variant threaded through `send_task`. The name matters: the
++    // app sends messages as `<uuid>.txt`, and some receivers fall back to the
++    // file name when they cannot render the message.
++    let (preselected, messages, scratch) = materialize_texts(args.file.clone(), &args.text)?;
+     let storage = storage::Repository::load(&args)?;
+     let identity = storage.identity.clone();
+     let (events_tx, mut events_rx) = mpsc::channel::<AppEvent>(64);
+@@ -218,10 +274,21 @@ pub async fn run(args: Args) -> anyhow::Result<()> {
+         send: None,
+         picker: None,
+         device_list: None,
+-        preselected: args.file,
++        preselected,
++        messages,
++        scratch,
+         events_tx: events_tx.clone(),
+     };
+ 
++    // Say so up front rather than letting the receiver reveal it: a request
++    // with more than one entry can never be a message request.
++    if !app.messages.is_empty() && app.preselected.len() > 1 {
++        app.ui.log(
++            Category::Send,
++            "More than one item selected: text is sent as a .txt file, not a message",
++        );
++    }
++
+     match app.preselected.is_empty() {
+         true => app
+             .ui
+@@ -268,6 +335,9 @@ pub async fn run(args: Args) -> anyhow::Result<()> {
+     let _ = discovery_stop_tx.send(());
+     let _ = tokio::time::timeout(Duration::from_secs(1), app.server.wait_stopped()).await;
+     let _ = tokio::time::timeout(Duration::from_secs(1), discovery.wait_stopped()).await;
++    if let Some(scratch) = app.scratch.take() {
++        let _ = std::fs::remove_dir_all(scratch);
++    }
+     Ok(())
+ }
+ 
+diff --git a/cli/src/app/sending.rs b/cli/src/app/sending.rs
+index ee4bce6..da80065 100644
+--- a/cli/src/app/sending.rs
++++ b/cli/src/app/sending.rs
+@@ -168,6 +168,10 @@ impl App {
+         let mut files = HashMap::new();
+         let mut paths = HashMap::new();
+         let mut total_bytes = 0u64;
++        // A request only reads as a message when it carries exactly one file,
++        // so a text sent alongside anything else is deliberately offered as a
++        // plain `.txt` instead. Matches what the desktop app puts on the wire.
++        let lone = picked.len() == 1;
+         for path in picked {
+             let metadata = match std::fs::metadata(&path) {
+                 Ok(metadata) if metadata.is_file() => metadata,
+@@ -184,6 +188,10 @@ impl App {
+                 .file_name()
+                 .map(|name| name.to_string_lossy().into_owned())
+                 .unwrap_or_else(|| "unnamed".to_string());
++            let message = match lone {
++                true => self.messages.get(&path).cloned(),
++                false => None,
++            };
+             total_bytes += metadata.len();
+             files.insert(
+                 id.clone(),
+@@ -191,11 +199,19 @@ impl App {
+                     id: id.clone(),
+                     file_name,
+                     size: metadata.len(),
++                    // A `.txt` already guesses to `text/plain`, and that is
++                    // exactly what the desktop app puts on the wire, so the
++                    // type needs no special case. The literal `"text"` enum
++                    // name does NOT work: mobile decodes the field through
++                    // `decodeFromMime`, which has no legacy-enum branch and
++                    // maps anything without a `/` to `FileType.other`.
+                     file_type: mime_guess::from_path(&path)
+                         .first_or_octet_stream()
+                         .to_string(),
+                     sha256: None,
+-                    preview: None,
++                    // The body rides in `preview`; a lone `text/*` entry
++                    // carrying one is what makes a receiver show a message.
++                    preview: message,
+                     metadata: FileMetadata::from_fs_metadata(&metadata),
+                 },
+             );
+diff --git a/cli/src/main.rs b/cli/src/main.rs
+index b6343b0..22df30d 100644
+--- a/cli/src/main.rs
++++ b/cli/src/main.rs
+@@ -30,6 +30,10 @@ pub struct Args {
+     /// File to send: opens the device list on start, selecting a device starts the transfer (repeatable)
+     #[arg(short, long = "file", value_name = "PATH")]
+     pub file: Vec<PathBuf>,
++
++    /// Text to send as a message instead of a file: opens the device list on start (repeatable)
++    #[arg(short = 't', long = "text", value_name = "TEXT")]
++    pub text: Vec<String>,
+ }
+ 
+ const HELP_SECTIONS: &str = "Events:\n  \

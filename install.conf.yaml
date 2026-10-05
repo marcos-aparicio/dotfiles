@@ -84,6 +84,10 @@
     ~/.config/systemd/user/tmux-shutdown.service: systemd/tmux-shutdown.service
     ~/.config/systemd/user/remapping.service: systemd/remapping.service
     ~/.config/systemd/user/download-organizer.service: systemd/download-organizer.service
+    ~/.config/systemd/user/localsend-cli-update.service: systemd/localsend-cli-update.service
+    ~/.config/systemd/user/localsend-cli-update.timer: systemd/localsend-cli-update.timer
+    ~/.config/systemd/user/agent-snapshot.service: systemd/agent-snapshot.service
+    ~/.config/systemd/user/agent-snapshot.timer: systemd/agent-snapshot.timer
     # scripts
     ~/.local/scripts: scripts
     ~/.local/actions: actions

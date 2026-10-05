@@ -1,0 +1,10 @@
+[Unit]
+Description=Install or update localsend-cli from GitHub releases
+Documentation=https://github.com/localsend/localsend
+
+[Service]
+Type=oneshot
+ExecStart=%h/.local/scripts/localsend-cli-update
+# No network-online.target: the user manager does not provide one. The script
+# retries curl instead, and the timer re-fires tomorrow if the network is
+# still down, so a boot without connectivity costs one failed run.

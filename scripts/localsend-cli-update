@@ -1,0 +1,216 @@
+#!/usr/bin/env bash
+# localsend-cli-update — install or update localsend-cli from GitHub releases.
+#
+# localsend-cli ships only as a GitHub release tarball: no apt repo, no brew
+# formula, nothing `apt upgrade` would ever touch. So this script IS the update
+# path, driven by localsend-cli-update.timer.
+#
+# Layout:
+#   ~/.local/opt/localsend-cli/<tag>[+patched]/localsend-cli   versioned payload
+#   ~/.local/bin/localsend-cli -> .../<tag>[+patched]/localsend-cli
+# Versions sit side by side, so a bad release is a one-symlink rollback:
+#   ln -sfn ~/.local/opt/localsend-cli/v1.18.2+patched/localsend-cli \
+#           ~/.local/bin/localsend-cli
+#
+# Two install modes:
+#   prebuilt  download the official release tarball (default)
+#   patched   build from source at the release tag with the patches in
+#             ~/dotfiles/patches/localsend-cli applied
+# Patched mode exists because `--text` is not in the upstream CLI. It is
+# self-retiring: when upstream's own CLI gains the flag, this script notices,
+# stops applying the patch, and goes back to the official binary. Delete the
+# patches directory to force that immediately.
+#
+# Interval lives here, not in the timer. The timer nudges daily; this script
+# decides whether 3 days have elapsed and stamps ONLY on success. That way a
+# run that lands while WSL has no network retries tomorrow instead of going
+# quiet for another three days, and the observable cadence is still 3 days.
+#
+# Usage: localsend-cli-update [--force] [--check]
+#   --force   ignore the interval stamp
+#   --check   report installed vs latest, change nothing
+
+set -euo pipefail
+
+REPO="localsend/localsend"
+PREFIX="$HOME/.local/opt/localsend-cli"
+LINK="$HOME/.local/bin/localsend-cli"
+SRC="$HOME/.local/src/localsend"
+PATCHES="$HOME/dotfiles/patches/localsend-cli"
+STAMP="${XDG_STATE_HOME:-$HOME/.local/state}/localsend-cli-update.stamp"
+INTERVAL="${LOCALSEND_UPDATE_INTERVAL:-$((3 * 24 * 60 * 60))}"
+KEEP=2 # current + one previous, for the rollback above
+
+force=0 check_only=0
+for arg in "$@"; do
+  case "$arg" in
+    --force) force=1 ;;
+    --check) check_only=1 ;;
+    -h|--help) sed -n '2,32p' "$0" | sed 's/^# \?//'; exit 0 ;;
+    *) echo "localsend-cli-update: unknown argument: $arg" >&2; exit 2 ;;
+  esac
+done
+
+log() { printf 'localsend-cli-update: %s\n' "$*"; }
+die() { printf 'localsend-cli-update: %s\n' "$*" >&2; exit 1; }
+
+case "$(uname -m)" in
+  x86_64|amd64) arch="linux-x86-64" ;;
+  aarch64|arm64) arch="linux-arm-64" ;;
+  *) die "no localsend-cli build for $(uname -m)" ;;
+esac
+
+# Interval gate. Runs before the API call so a no-op costs nothing.
+if (( !force && !check_only )) && [[ -f "$STAMP" ]]; then
+  age=$(( $(date +%s) - $(stat -c %Y "$STAMP") ))
+  if (( age < INTERVAL )); then
+    log "checked $((age / 3600))h ago, next check in $(( (INTERVAL - age) / 3600 ))h"
+    exit 0
+  fi
+fi
+
+stamp() { mkdir -p "$(dirname "$STAMP")" && touch "$STAMP"; }
+
+# A token is optional; it only raises the anonymous 60-req/h rate limit, which
+# one call every three days never approaches.
+token="${GITHUB_TOKEN:-${GH_TOKEN:-}}"
+auth=()
+[[ -n "$token" ]] && auth=(-H "Authorization: Bearer $token")
+
+fetch() {
+  curl -fsSL --retry 3 --retry-delay 5 --max-time "${2:-120}" \
+    -H "Accept: application/vnd.github+json" "${auth[@]}" "$1"
+}
+
+release="$(fetch "https://api.github.com/repos/$REPO/releases/latest")" \
+  || die "could not reach the GitHub release API"
+tag="$(jq -er '.tag_name' <<<"$release")" || die "release JSON had no tag_name"
+
+# Decide the mode. Patches are dropped the moment upstream ships the flag they
+# add, so this never silently maintains a fork longer than necessary.
+shopt -s nullglob
+patches=("$PATCHES"/*.patch)
+shopt -u nullglob
+mode="prebuilt"
+if (( ${#patches[@]} )); then
+  if fetch "https://raw.githubusercontent.com/$REPO/$tag/cli/src/main.rs" 300 |
+      grep -q 'long = "text"'; then
+    log "$tag has --text upstream: the local patch is obsolete"
+    log "remove $PATCHES to stop being reminded"
+  else
+    mode="patched"
+  fi
+fi
+
+case "$mode" in
+  patched) target="$PREFIX/$tag+patched/localsend-cli" ;;
+  prebuilt) target="$PREFIX/$tag/localsend-cli" ;;
+esac
+current="$(readlink -f "$LINK" 2>/dev/null || true)"
+
+if (( check_only )); then
+  log "installed: ${current:-none}"
+  log "latest:    $tag (mode: $mode)"
+  [[ "$current" == "$target" ]] && log "up to date" || log "update available"
+  exit 0
+fi
+
+if [[ "$current" == "$target" && -x "$target" ]]; then
+  log "already on $tag ($mode)"
+  stamp
+  exit 0
+fi
+
+tmp="$(mktemp -d)"
+trap 'rm -rf "$tmp"' EXIT
+
+# Both modes end with a binary at $tmp/stage/localsend-cli.
+build_prebuilt() {
+  local asset="LocalSend-CLI-${tag#v}-${arch}.tar.gz" meta url digest
+  # `digest` is "sha256:<hex>" on assets GitHub has hashed.
+  meta="$(jq -er --arg n "$asset" \
+    '.assets[] | select(.name == $n) | "\(.browser_download_url)\t\(.digest // "")"' \
+    <<<"$release")" || die "$tag has no asset named $asset"
+  url="${meta%%$'\t'*}"
+  digest="${meta##*$'\t'}"
+
+  log "downloading $asset"
+  curl -fsSL --retry 3 --retry-delay 5 --max-time 600 -o "$tmp/pkg.tar.gz" "$url" \
+    || die "download failed: $url"
+
+  # The digest arrives over the same HTTPS channel as the tarball, so it guards
+  # against a truncated or CDN-mangled transfer, not against a compromised
+  # GitHub. If a future release omits it, warn rather than freeze updates.
+  if [[ -n "$digest" ]]; then
+    echo "${digest#sha256:}  $tmp/pkg.tar.gz" | sha256sum -c --quiet - \
+      || die "checksum mismatch on $asset"
+  else
+    log "warning: release published no digest for $asset, skipping checksum"
+  fi
+
+  tar -xzf "$tmp/pkg.tar.gz" -C "$tmp"
+  [[ -f "$tmp/localsend-cli" ]] || die "$asset did not contain localsend-cli"
+  install -Dm755 "$tmp/localsend-cli" "$tmp/stage/localsend-cli"
+}
+
+build_patched() {
+  # systemd user units get a bare PATH, so find cargo where rustup puts it.
+  local cargo
+  cargo="$(command -v cargo || true)"
+  for candidate in "${CARGO_HOME:-$HOME/.cargo}/bin/cargo" \
+                   "$HOME/.local/share/cargo/bin/cargo"; do
+    if [[ -z "$cargo" && -x "$candidate" ]]; then
+      cargo="$candidate"
+    fi
+  done
+  [[ -n "$cargo" ]] || die "patched mode needs cargo; install Rust or delete $PATCHES"
+
+  if [[ ! -d "$SRC/.git" ]]; then
+    log "cloning $REPO into $SRC"
+    mkdir -p "$(dirname "$SRC")"
+    git clone -q --filter=blob:none "https://github.com/$REPO.git" "$SRC" \
+      || die "clone failed"
+  fi
+  git -C "$SRC" fetch -q --tags --depth 1 origin "refs/tags/$tag:refs/tags/$tag" \
+    2>/dev/null || git -C "$SRC" fetch -q --tags origin || die "fetch failed"
+  git -C "$SRC" checkout -q -f "$tag" || die "no such tag in the clone: $tag"
+  git -C "$SRC" clean -qfd -e target
+
+  for patch in "${patches[@]}"; do
+    git -C "$SRC" apply "$patch" \
+      || die "$(basename "$patch") does not apply to $tag; rebase it against the new source, or delete it to fall back to the official binary"
+  done
+
+  log "building localsend-cli $tag from source (this takes a few minutes)"
+  ( cd "$SRC" && "$cargo" build --release -q -p localsend-cli ) \
+    || die "cargo build failed"
+  install -Dm755 "$SRC/target/release/localsend-cli" "$tmp/stage/localsend-cli"
+  git -C "$SRC" checkout -q -- cli # leave the tree clean for the next run
+}
+
+"build_$mode"
+
+# Stage the whole version directory, then swap it in, so an interrupted run
+# never leaves a half-written binary under a version number that looks valid.
+dir="$(dirname "$target")"
+rm -rf "$dir"
+mkdir -p "$PREFIX"
+mv -Tf "$tmp/stage" "$dir"
+
+mkdir -p "$(dirname "$LINK")"
+ln -sfn "$target" "$tmp/link"
+mv -Tf "$tmp/link" "$LINK"
+
+version="$("$LINK" --version 2>/dev/null | head -n1 || true)"
+log "installed $tag ($mode)${version:+ ($version)} -> $LINK"
+
+# Prune everything older than the newest $KEEP versions.
+mapfile -t stale < <(find "$PREFIX" -mindepth 1 -maxdepth 1 -type d -printf '%T@ %p\n' |
+  sort -rn | tail -n "+$((KEEP + 1))" | cut -d' ' -f2-)
+for old in "${stale[@]:-}"; do
+  [[ -n "$old" && "$old" != "$dir" ]] || continue
+  log "pruning $(basename "$old")"
+  rm -rf "$old"
+done
+
+stamp
