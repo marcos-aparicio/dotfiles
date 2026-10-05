@@ -1,10 +1,44 @@
 #!/bin/bash
-cache_file="/tmp/tmux_weather.cache"
-cache_age=$(($(date +%s) - $(stat -c %Y "$cache_file" 2>/dev/null || echo 0)))
+# Temperature for the tmux status line.
+# Primary: wttr.in. Fallback: open-meteo (needs coords, geolocated via ipinfo).
+# Runs inside tmux's #() so every network call is hard-bounded; on total
+# failure the previous cached value is served rather than an error.
 
-if [ $cache_age -gt 300 ] || [ ! -f "$cache_file" ]; then
-    temp=$(curl -s "https://wttr.in?format=j1" 2>/dev/null | jq -r ".current_condition[0].temp_C // \"N/A\"" 2>/dev/null)
-    echo "$temp°C" > "$cache_file" 2>/dev/null
+cache_file="/tmp/tmux_weather.cache"
+loc_file="/tmp/tmux_weather.loc"
+
+age() { echo $(($(date +%s) - $(stat -c %Y "$1" 2>/dev/null || echo 0))); }
+
+fetch_wttr() {
+    curl -sf --max-time 2 "https://wttr.in?format=j1" 2>/dev/null |
+        jq -er ".current_condition[0].temp_C" 2>/dev/null
+}
+
+# "lat,lon", cached for a day: geolocation changes far more slowly than weather.
+location() {
+    if [ -s "$loc_file" ] && [ "$(age "$loc_file")" -lt 86400 ]; then
+        cat "$loc_file"
+        return 0
+    fi
+    local loc
+    loc=$(curl -sf --max-time 2 "https://ipinfo.io/json" 2>/dev/null |
+        jq -er ".loc" 2>/dev/null) || return 1
+    printf '%s' "$loc" > "$loc_file" 2>/dev/null
+    echo "$loc"
+}
+
+fetch_open_meteo() {
+    local loc
+    loc=$(location) || return 1
+    curl -sf --max-time 3 \
+        "https://api.open-meteo.com/v1/forecast?latitude=${loc%%,*}&longitude=${loc##*,}&current=temperature_2m" \
+        2>/dev/null | jq -er ".current.temperature_2m | round" 2>/dev/null
+}
+
+if [ ! -s "$cache_file" ] || [ "$(age "$cache_file")" -gt 300 ]; then
+    temp=$(fetch_wttr) || temp=$(fetch_open_meteo)
+    # Only overwrite on success, so an outage can't poison the cache for 5min.
+    [ -n "$temp" ] && printf '%s°C' "$temp" > "$cache_file" 2>/dev/null
 fi
 
 cat "$cache_file" 2>/dev/null || echo "N/A"
