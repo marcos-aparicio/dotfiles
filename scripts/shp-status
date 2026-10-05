@@ -1,0 +1,219 @@
+#!/usr/bin/env bash
+# Staff status: the only writer of /tmp/staff_comment_cache.
+#
+#   shp-status fetch          re-read state from the server, repaint the bar
+#   shp-status set <state>    change state, then verify it took
+#   shp-status states         list the state keys
+#
+# <state> is one of: signed-in | break | back | eod
+# SHP_DRY_RUN=1 prints the request that would be sent and sends nothing.
+#
+# The bar segment (tmux/plugins/catpuccin.tmux.conf) and starship's
+# custom.staff_comment module both just `cat` the cache file, so everything
+# that changes what they show happens here.
+#
+# WHY THERE IS NO TIMER: the read endpoint is POST .../update-self and every
+# call stamps `logged_time`. Fetching is a write. Polling it on a schedule
+# would report you as active at your desk every interval, awake or not, so the
+# only fetches are the one at tmux startup and the one after a state change.
+set -uo pipefail
+
+API="https://corp.superhairpieces.com/storefront/shp-staff"
+STAFF_ID=160
+EMAIL="j119@superhairpieces.com"
+NAME="Marcos A"
+CACHE=/tmp/staff_comment_cache
+TIMEOUT=10
+
+# The cookie is optional. update-self answers with no credentials at all, so
+# /status probably does too. If the file exists its contents are sent as the
+# Cookie header and the UA below is sent with it -- cf_clearance is issued
+# against a browser fingerprint and is void if replayed under a different
+# User-Agent. If it does not exist, the request goes out bare.
+#
+# Deliberately outside the dotfiles repo: scm_session_id is a live session.
+# One line, the value of a Cookie: header, copied from the browser. chmod 600.
+COOKIE_FILE="${SHP_COOKIE_FILE:-$HOME/.config/shp/cookie}"
+UA="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36"
+
+# state key -> the `comment` string the server reports for it. These are the
+# only four values in use across the whole staff list.
+label_for() {
+	case "$1" in
+	signed-in) echo "Signed in" ;;
+	break) echo "Break" ;;
+	back) echo "Back from break" ;;
+	eod) echo "End of the Day" ;;
+	*) return 1 ;;
+	esac
+}
+
+# The one write. `time` is stamped now, in the local wall-clock format the web
+# app sends; everything else is fixed per state.
+#
+# punch-window is not called. The browser fires it before two of the four, but
+# it takes only {"userid"} -- it cannot carry a state -- and the state change
+# is the /status call. Add it here if a punch ever goes missing.
+post_status() {
+	local payload="$1" body code
+	local -a auth=()
+
+	if [ -r "$COOKIE_FILE" ]; then
+		auth=(-b "$(tr -d '\n' <"$COOKIE_FILE")" -H "User-Agent: $UA")
+	fi
+
+	if [ -n "${SHP_DRY_RUN:-}" ]; then
+		printf 'POST %s/status\n' "$API"
+		if [ ${#auth[@]} -eq 0 ]; then
+			printf 'Cookie: (none -- no %s)\n' "$COOKIE_FILE"
+		else
+			printf 'Cookie: %s bytes from %s\n' "${#auth[1]}" "$COOKIE_FILE"
+		fi
+		printf 'Body: %s\n' "$payload"
+		return 0
+	fi
+
+	body=$(curl -sS --max-time "$TIMEOUT" -w '\n%{http_code}' \
+		--url "$API/status" \
+		-H "Accept: application/json" \
+		-H "Content-Type: application/json" \
+		-H "Origin: https://corp.superhairpieces.com" \
+		-H "Referer: https://corp.superhairpieces.com/shp-log" \
+		"${auth[@]}" \
+		--data-raw "$payload") || return 2
+
+	code=${body##*$'\n'}
+	case "$code" in
+	2*) return 0 ;;
+	401 | 403) return 66 ;; # session or cf_clearance expired
+	*)
+		printf 'HTTP %s\n' "$code" >&2
+		return 3
+		;;
+	esac
+}
+
+# state key -> the request that sets it. Non-zero on a failed request; the
+# caller additionally re-reads the state, so a 200 that silently does nothing
+# is still caught.
+request_for() {
+	# UTC, not local. The string carries no offset, but the server reads it
+	# as UTC: a captured end-of-day says 22:00 against an 18:00 EDT shift
+	# end, and the API returns logged_time as an explicit Zulu timestamp.
+	local now
+	now=$(date -u '+%Y-%m-%d %H:%M:%S.%3N')
+	case "$1" in
+	signed-in) post_status "$(payload 1 'Signed in' "$now")" ;;
+	break) post_status "$(payload 0 'Break' "$now")" ;;
+	back) post_status "$(payload 1 'Back from break' "$now")" ;;
+	# `timeline` appears only on end-of-day; the web app sends it equal to
+	# `time`, so it is not a separate clock.
+	eod) post_status "$(payload 0 'End of the Day' "$now" "$now")" ;;
+	*) return 1 ;;
+	esac
+}
+
+# payload <status> <comment> <time> [timeline]
+payload() {
+	jq -cn \
+		--argjson userid "$STAFF_ID" \
+		--argjson status "$1" \
+		--arg comment "$2" \
+		--arg time "$3" \
+		--arg timeline "${4:-}" \
+		--arg email "$EMAIL" \
+		--arg name "$NAME" \
+		'{$userid, $status, $comment}
+                 + (if $timeline == "" then {} else {$timeline} end)
+                 + {action: "add", $email, $name, $time}'
+}
+
+usage() {
+	sed -n '2,9p' "$0" | sed 's/^# \?//'
+	exit "${1:-0}"
+}
+
+# Fatal problems interrupt: the failure mode this guards against is believing
+# you are on break while the server has you signed in.
+fail() {
+	if command -v notify >/dev/null 2>&1; then
+		notify -u critical -s staff "$1"
+	else
+		tmux display-message "staff: $1" 2>/dev/null || echo "staff: $1" >&2
+	fi
+	exit 1
+}
+
+say() { tmux display-message "staff: $1" 2>/dev/null || echo "staff: $1"; }
+
+paint() {
+	printf '%s\n' "$1" >"$CACHE"
+	tmux refresh-client -S 2>/dev/null || true
+}
+
+# Read our own comment from the roster the server returns. Prints it; non-zero
+# if the request failed or we are not in the list.
+remote_comment() {
+	local body
+	body=$(curl -sS --max-time "$TIMEOUT" -X POST "$API/update-self" \
+		-H "Accept: application/json" \
+		-H "Content-Type: application/json") || return 2
+	printf '%s' "$body" |
+		jq -er --argjson id "$STAFF_ID" '.list[] | select(.id == $id) | .comment'
+}
+
+cmd_fetch() {
+	local comment
+	comment=$(remote_comment) || {
+		[ $? -eq 2 ] && fail "cannot reach the staff API"
+		fail "the staff API did not return record $STAFF_ID"
+	}
+	paint "$comment"
+	printf '%s\n' "$comment"
+}
+
+cmd_set() {
+	local key="${1:-}" want
+	want=$(label_for "$key") || usage 1
+
+	if [ -n "${SHP_DRY_RUN:-}" ]; then
+		request_for "$key"
+		return $?
+	fi
+
+	# In-flight marker. The re-fetch below overwrites it either way, so a
+	# failed change cannot leave the bar claiming a state you are not in.
+	paint "$want…"
+
+	# `if ! cmd` clobbers $?, so the status has to be captured directly.
+	request_for "$key"
+	local rc=$?
+	if [ "$rc" -ne 0 ]; then
+		cmd_fetch >/dev/null
+		case "$rc" in
+		66) fail "rejected (401/403) -- this needs a cookie in $COOKIE_FILE" ;;
+		2) fail "cannot reach the staff API" ;;
+		esac
+		fail "could not set '$want'"
+	fi
+
+	local now
+	now=$(remote_comment) || {
+		paint "$want?"
+		fail "set '$want' but could not read the state back"
+	}
+	paint "$now"
+	[ "$now" = "$want" ] || fail "asked for '$want', server still says '$now'"
+	say "$now"
+}
+
+case "${1:-}" in
+fetch) cmd_fetch >/dev/null ;;
+set)
+	shift
+	cmd_set "$@"
+	;;
+states) printf '%s\n' signed-in break back eod ;;
+-h | --help | "") usage ;;
+*) usage 1 ;;
+esac
