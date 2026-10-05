@@ -77,6 +77,17 @@
 # Example ~/.config/dokploy/env:
 #   DOKPLOY_URL=https://dokploy.example.com
 #   DOKPLOY_API_KEY_CMD='pass show personal/dokploy/api-key'
+#
+# More accounts: the pair above is account 1; account N (N >= 2) is
+# DOKPLOY_URL_N / DOKPLOY_API_KEY_N, resolved the same way (env, the file above,
+# *_CMD, pass personal/dokploy-N/{url,api-key}, .env). The list ends at the
+# first N with neither DOKPLOY_URL_N nor DOKPLOY_URL_N_CMD set. A pair is only
+# used once the API accepts it; an incomplete, rejected or unreachable pair is
+# skipped. A repo's previews come from the first account that has any, so a
+# repo that doesn't live on account 1 is looked up on account 2, then 3, …;
+# `all` and `audit` cover every account:
+#   DOKPLOY_URL_2=https://dokploy.work.example.com
+#   DOKPLOY_API_KEY_2_CMD='pass show work/dokploy/api-key'
 
 set -uo pipefail
 
@@ -149,43 +160,86 @@ resolve() {
   return 1
 }
 
-load_config() {
-  local cfg="${XDG_CONFIG_HOME:-$HOME/.config}/dokploy/env"
-  # Remember what the environment already said: sourcing the config file would
-  # otherwise clobber it, and the environment is documented to outrank the file.
-  local env_url="${DOKPLOY_URL:-}" env_key="${DOKPLOY_API_KEY:-}"
-  local env_url_cmd="${DOKPLOY_URL_CMD:-}" env_key_cmd="${DOKPLOY_API_KEY_CMD:-}"
+# Every account's resolved pair, by number, so each secret is looked up (and
+# any pass/gpg prompt shown) at most once per run.
+declare -A ACC_URL=() ACC_KEY=()
+CONFIG_READ=""
+TRIED=""
+PROJECTS=""
 
+# Source the config file once, keeping the environment's word over it: the
+# environment is documented to outrank the file.
+read_config() {
+  [ -n "$CONFIG_READ" ] && return 0
+  CONFIG_READ=1
+  local cfg="${XDG_CONFIG_HOME:-$HOME/.config}/dokploy/env" saved
+  saved=$(export -p | grep -E '^declare -x DOKPLOY_(URL|API_KEY)[A-Z0-9_]*="[^"]')
   # shellcheck disable=SC1090
   [ -f "$cfg" ] && . "$cfg"
+  # -g: a bare `declare` inside a function would restore them as locals, gone
+  # the moment this returns.
+  [ -n "$saved" ] && eval "${saved//declare -x /declare -gx }"
+  return 0
+}
 
-  [ -n "$env_url" ] && DOKPLOY_URL="$env_url"
-  [ -n "$env_key" ] && DOKPLOY_API_KEY="$env_key"
-  [ -n "$env_url_cmd" ] && DOKPLOY_URL_CMD="$env_url_cmd"
-  [ -n "$env_key_cmd" ] && DOKPLOY_API_KEY_CMD="$env_key_cmd"
+# account_count — how many accounts are configured (account 1 always counts).
+account_count() {
+  local n=2 u uc
+  read_config
+  while :; do
+    u="DOKPLOY_URL_$n" uc="DOKPLOY_URL_${n}_CMD"
+    [ -n "${!u:-}${!uc:-}" ] || break
+    n=$((n + 1))
+  done
+  echo $((n - 1))
+}
 
-  DOKPLOY_URL=$(resolve DOKPLOY_URL personal/dokploy/url)
-  if [ -z "$DOKPLOY_URL" ]; then
-    CONFIG_ERR="DOKPLOY_URL is not set — see 'dokploy-previews --help'"
+# use_account <n> — make account n the one api() talks to, once Dokploy has
+# accepted its key. The project list that check fetched stays in PROJECTS: the
+# caller asks for it next anyway, so confirming costs no extra round trip. On
+# failure the reason is appended to TRIED.
+use_account() {
+  local n="$1" sfx="" pass_dir="personal/dokploy"
+  read_config
+  [ "$n" -gt 1 ] && sfx="_$n" pass_dir="personal/dokploy-$n"
+  if [ -z "${ACC_URL[$n]+x}" ]; then
+    ACC_URL[$n]=$(resolve "DOKPLOY_URL$sfx" "$pass_dir/url")
+    ACC_URL[$n]="${ACC_URL[$n]%/}"
+    ACC_KEY[$n]=$(resolve "DOKPLOY_API_KEY$sfx" "$pass_dir/api-key")
+  fi
+  if [ -z "${ACC_URL[$n]}" ] || [ -z "${ACC_KEY[$n]}" ]; then
+    TRIED="$TRIED"$'\n'"  account $n: DOKPLOY_URL$sfx / DOKPLOY_API_KEY$sfx not set"
     return 1
   fi
-  DOKPLOY_API_KEY=$(resolve DOKPLOY_API_KEY personal/dokploy/api-key)
-  if [ -z "$DOKPLOY_API_KEY" ]; then
-    CONFIG_ERR="DOKPLOY_API_KEY is not set — see 'dokploy-previews --help'"
-    return 1
-  fi
+  # Exported under their own names so the _fetch-* workers inherit exactly the
+  # confirmed pair, without touching the DOKPLOY_URL* inputs a later account
+  # lookup (or a spawned refresh) resolves from.
+  export DOKPLOY_ACTIVE_URL="${ACC_URL[$n]}" DOKPLOY_ACTIVE_KEY="${ACC_KEY[$n]}" DOKPLOY_ACCOUNT="$n"
+  PROJECTS=$(api project.all 2>/dev/null) && [ -n "$PROJECTS" ] && return 0
+  TRIED="$TRIED"$'\n'"  account $n: ${ACC_URL[$n]} rejected the key or is unreachable"
+  PROJECTS=""
+  return 1
+}
 
-  DOKPLOY_URL="${DOKPLOY_URL%/}"
-  export DOKPLOY_URL DOKPLOY_API_KEY
+# The first account Dokploy accepts. For callers that need just one: the
+# per-repo and account-wide lookups walk every account themselves.
+load_config() {
+  local n total
+  total=$(account_count)
+  for ((n = 1; n <= total; n++)); do
+    use_account "$n" && return 0
+  done
+  CONFIG_ERR="no Dokploy account could be confirmed:$TRIED"$'\n'"see 'dokploy-previews --help'"
+  return 1
 }
 
 # api <procedure> [query-string] — Dokploy exposes its tRPC queries as GET /api/<procedure>
 api() {
   local path="$1" query="${2:-}"
   curl -fsS --max-time 20 \
-    -H "x-api-key: $DOKPLOY_API_KEY" \
+    -H "x-api-key: $DOKPLOY_ACTIVE_KEY" \
     -H "accept: application/json" \
-    "$DOKPLOY_URL/api/$path${query:+?$query}"
+    "$DOKPLOY_ACTIVE_URL/api/$path${query:+?$query}"
 }
 
 # The remote to compare against: the upstream of the current branch, else origin.
@@ -266,8 +320,8 @@ cmd_fetch_prs() {
 # stderr and the return is non-zero, leaving any existing cache untouched.
 fetch_merged() {
   local owner="$1" repo="$2" projects apps ids merged
-  projects=$(api project.all 2>/dev/null) || {
-    echo "cannot reach $DOKPLOY_URL — check DOKPLOY_URL / DOKPLOY_API_KEY" >&2
+  projects=${PROJECTS:-$(api project.all 2>/dev/null)} || {
+    echo "cannot reach $DOKPLOY_ACTIVE_URL — check DOKPLOY_URL / DOKPLOY_API_KEY" >&2
     return 1
   }
 
@@ -275,7 +329,7 @@ fetch_merged() {
   # page tree: /dashboard/project/<id>/environment/<id>/services/application/<id>,
   # and the app page selects a pane from ?tab= (general, logs, deployments,
   # preview-deployments, …).
-  apps=$(printf '%s' "$projects" | jq -c --arg base "$DOKPLOY_URL" '
+  apps=$(printf '%s' "$projects" | jq -c --arg base "$DOKPLOY_ACTIVE_URL" '
     [ .[]? as $p
       | ($p.environments // [])[] as $e
       | ($e.applications // [])[]
@@ -303,7 +357,7 @@ fetch_merged() {
   # gitea /pulls/N, bitbucket /pull-requests/N), so one substring test covers all.
   # An empty owner keeps everything — that is the account-wide set `all` renders.
   merged=$(cat "$CLEAN_TMPD"/*.json 2>/dev/null | jq -s -c \
-    --argjson apps "$apps" --arg owner "$owner" --arg repo "$repo" '
+    --argjson apps "$apps" --arg owner "$owner" --arg repo "$repo" --argjson account "$DOKPLOY_ACCOUNT" '
     # <owner>/<repo> are the two path segments before the PR kind, on every forge
     def slug: (. // "") | split("/") | if length >= 5 then .[3] + "/" + .[4] else "" end;
     (if $owner == "" then ""
@@ -312,11 +366,47 @@ fetch_merged() {
         | select($needle == "" or (((.pullRequestURL // "") | ascii_downcase) | contains($needle)))
         | ($apps[.applicationId] // {}) as $a
         | . + { appLabel: ($a.label // "?"), dashboard: ($a.dashboard // ""),
-                repoSlug: (.pullRequestURL | slug) }
+                repoSlug: (.pullRequestURL | slug), account: $account }
       ]
     | sort_by(.createdAt) | reverse')
   [ -n "$merged" ] || merged="[]"
   printf '%s' "$merged"
+}
+
+# fetch_all_accounts <owner> <repo> — fetch_merged across accounts. A repo takes
+# the first account that has previews for it; the account-wide set (empty owner)
+# is every account's previews together. An account that fails is never taken
+# as "no previews": a repo found nowhere while an account was down fails (so
+# the cache keeps what it had), and `all` keeps the accounts that answered but
+# says which ones did not.
+fetch_all_accounts() {
+  local owner="$1" repo="$2" n total one parts=()
+  total=$(account_count)
+  for ((n = 1; n <= total; n++)); do
+    use_account "$n" || continue
+    one=$(fetch_merged "$owner" "$repo") || {
+      TRIED="$TRIED"$'\n'"  account $n: fetching previews failed"
+      continue
+    }
+    if [ -n "$owner" ]; then
+      [ "$one" != "[]" ] && { printf '%s' "$one"; return 0; }
+    fi
+    parts+=("$one")
+  done
+  if [ ${#parts[@]} -eq 0 ]; then
+    echo "no Dokploy account could be confirmed:$TRIED" >&2
+    return 1
+  fi
+  if [ -n "$owner" ]; then
+    if [ -n "$TRIED" ]; then
+      echo "no previews for $owner/$repo on the accounts that answered, and some did not:$TRIED" >&2
+      return 1
+    fi
+    printf '[]'
+  else
+    [ -n "$TRIED" ] && echo "dokploy-previews: some accounts were skipped:$TRIED" >&2
+    printf '%s\n' "${parts[@]}" | jq -s -c 'add | sort_by(.createdAt) | reverse'
+  fi
 }
 
 # stdin: merged json -> stdout: one tab separated row per preview deployment
@@ -357,8 +447,7 @@ cmd_refresh() {
     owner="${slug%%/*}"
     repo="${slug##*/}"
   fi
-  load_config || { echo "$CONFIG_ERR" >&2; return 1; }
-  merged=$(fetch_merged "$owner" "$repo") || return 1
+  merged=$(fetch_all_accounts "$owner" "$repo") || return 1
 
   mkdir -p "$CACHE_DIR"
   json=$(cache_json "$slug")
@@ -560,16 +649,17 @@ app_wiring() {
     return 0
   fi
 
-  projects=$(api project.all 2>/dev/null) || {
-    echo "cannot reach $DOKPLOY_URL — check DOKPLOY_URL / DOKPLOY_API_KEY" >&2
-    return 1
-  }
-  ids=$(printf '%s' "$projects" |
-    jq -r '.[]? | (.environments // [])[] | (.applications // [])[].applicationId')
-  [ -n "$ids" ] || { echo "no applications visible with this API key" >&2; return 1; }
-
+  local n total
+  total=$(account_count)
   CLEAN_TMPD2=$(mktemp -d) || { echo "mktemp failed" >&2; return 1; }
-  printf '%s\n' "$ids" | xargs -r -P 8 -I {} "$SELF" _fetch-app "$CLEAN_TMPD2" {}
+  for ((n = 1; n <= total; n++)); do
+    use_account "$n" || continue
+    ids=$(printf '%s' "$PROJECTS" |
+      jq -r '.[]? | (.environments // [])[] | (.applications // [])[].applicationId')
+    [ -n "$ids" ] && printf '%s\n' "$ids" | xargs -r -P 8 -I {} "$SELF" _fetch-app "$CLEAN_TMPD2" {}
+  done
+  compgen -G "$CLEAN_TMPD2/*.json" >/dev/null ||
+    { echo "no applications visible on any Dokploy account" >&2; return 1; }
 
   out=$(cat "$CLEAN_TMPD2"/*.json 2>/dev/null | jq -s -c '
     [ .[] | select(.isPreviewDeploymentsActive == true)
@@ -724,14 +814,20 @@ cmd_preview() {
       end' "$cache"
 }
 
-# Resolve the credentials and throw them away. The point is the side effect:
-# if the secret lives behind gpg/pass/1password, its prompt happens HERE, in a
-# plain terminal, instead of inside tv — a full-screen TUI owns stdin, so a
-# pinentry spawned underneath it can draw but never receives a keystroke.
+# Resolve and confirm every account. The point is the side effect: if a secret
+# lives behind gpg/pass/1password, its prompt happens HERE, in a plain
+# terminal, instead of inside tv — a full-screen TUI owns stdin, so a pinentry
+# spawned underneath it can draw but never receives a keystroke. Fails only
+# when no account works; a broken one is reported either way.
 cmd_auth() {
+  local n total ok=""
   RESOLVE_VERBOSE=1
-  load_config || die "$CONFIG_ERR"
-  api project.all >/dev/null 2>&1 || die "cannot reach $DOKPLOY_URL — check the url and key"
+  total=$(account_count)
+  for ((n = 1; n <= total; n++)); do
+    use_account "$n" && ok=1
+  done
+  [ -n "$ok" ] || die "no Dokploy account could be confirmed:$TRIED"
+  [ -z "$TRIED" ] || echo "dokploy-previews: some accounts failed:$TRIED" >&2
 }
 
 # Build log of this preview's most recent deployment. Dokploy's UI shows these
@@ -749,12 +845,14 @@ cmd_logs() {
   cache=$(cache_json "$slug")
   [ -f "$cache" ] || { page "No cached data yet — reload the channel with ctrl-r."; return 0; }
 
-  dep_id=$(jq -r --arg id "$id" '
+  local account
+  { read -r dep_id; read -r account; } < <(jq -r --arg id "$id" '
     (map(select(.previewDeploymentId == $id)) | first) // {}
-    | ((.deployments // []) | first | .deploymentId?) // ""' "$cache")
+    | (((.deployments // []) | first | .deploymentId?) // ""), (.account // 1)' "$cache")
   [ -n "$dep_id" ] || { page "This preview deployment has no builds yet."; return 0; }
 
-  load_config || { page "$CONFIG_ERR"; return 0; }
+  # The preview came from a specific account; its build log lives there too.
+  use_account "${account:-1}" || { page "Account ${account:-1} is unavailable:$TRIED"; return 0; }
   body=$(api deployment.readLogs "deploymentId=$dep_id&tail=5000") || {
     page "Could not read logs for deployment $dep_id.
 
@@ -1013,12 +1111,15 @@ statusline) cmd_statusline ;;
 segment) cmd_segment "${2:-}" ;;
 refresh) cmd_refresh "${2:-}" ;;
 _bg-refresh) cmd_bg_refresh "$2" "${3:-}" ;;
+# Workers run under a parent that already confirmed an account and exported it
+# as DOKPLOY_ACTIVE_*; confirming it again per application would double the
+# requests.
 _fetch-previews)
-  load_config || die "$CONFIG_ERR"
+  [ -n "${DOKPLOY_ACTIVE_URL:-}" ] || die "internal: no active account"
   cmd_fetch_previews "$2" "$3"
   ;;
 _fetch-app)
-  load_config || die "$CONFIG_ERR"
+  [ -n "${DOKPLOY_ACTIVE_URL:-}" ] || die "internal: no active account"
   cmd_fetch_app "$2" "$3"
   ;;
 _fetch-prs) cmd_fetch_prs "$2" "$3" ;;
